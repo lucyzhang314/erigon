@@ -158,5 +158,9 @@ var DefaultFlags = []cli.Flag{
 
 	&utils.OtsSearchMaxCapFlag,
 
+	&utils.EOtsFlag,
+	&utils.EOtsAddrFlag,
+	&utils.EOtsPortFlag,
+
 	&utils.TrustedSetupFile,
 }

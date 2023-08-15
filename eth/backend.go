@@ -804,6 +804,21 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config) error {
 	}()
 	go s.engineBackendRPC.Start(httpRpcCfg, s.chainDB, s.blockReader, ff, stateCache, s.agg, s.engine, ethRpcClient, txPoolRpcClient, miningRpcClient)
 
+	// Embedded Otterscan
+	if httpRpcCfg.EOtsEnabled {
+		go func() {
+			// Copy/uses rpcdaemon cfg as basis, but override it to explicitly enable all necessary
+			// eots APIs
+			cfgCopy := httpRpcCfg
+			cfgCopy.API = []string{"eth", "erigon", "ots"}
+			eotsApiList := jsonrpc.APIList(chainKv, borDb, ethRpcClient, txPoolRpcClient, miningRpcClient, ff, stateCache, blockReader, s.agg, cfgCopy, s.engine, s.logger)
+
+			if err := initEmbeddedOts(ctx, s.logger, httpRpcCfg, eotsApiList); err != nil {
+				s.logger.Error(err.Error())
+			}
+		}()
+	}
+
 	// Register the backend on the node
 	stack.RegisterLifecycle(s)
 	return nil
