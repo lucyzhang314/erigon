@@ -23,6 +23,7 @@ import (
 	"github.com/ledgerwatch/erigon/eth/stagedsync"
 	"github.com/ledgerwatch/erigon/eth/tracers"
 	"github.com/ledgerwatch/erigon/eth/tracers/logger"
+	polygontracer "github.com/ledgerwatch/erigon/polygon/tracer"
 	"github.com/ledgerwatch/erigon/turbo/rpchelper"
 	"github.com/ledgerwatch/erigon/turbo/services"
 )
@@ -36,7 +37,7 @@ type BlockGetter interface {
 }
 
 // ComputeTxEnv returns the execution environment of a certain transaction.
-func ComputeTxEnv(ctx context.Context, engine consensus.EngineReader, block *types.Block, cfg *chain.Config, headerReader services.HeaderReader, dbtx kv.Tx, txIndex int, historyV3 bool) (core.Message, evmtypes.BlockContext, evmtypes.TxContext, *state.IntraBlockState, state.StateReader, error) {
+func ComputeTxEnv(ctx context.Context, engine consensus.EngineReader, block *types.Block, cfg *chain.Config, blockReader services.FullBlockReader, dbtx kv.Tx, txIndex int, historyV3 bool) (core.Message, evmtypes.BlockContext, evmtypes.TxContext, *state.IntraBlockState, state.StateReader, error) {
 	reader, err := rpchelper.CreateHistoryStateReader(dbtx, block.NumberU64(), txIndex, historyV3, cfg.ChainName)
 	if err != nil {
 		return nil, evmtypes.BlockContext{}, evmtypes.TxContext{}, nil, nil, err
@@ -45,24 +46,33 @@ func ComputeTxEnv(ctx context.Context, engine consensus.EngineReader, block *typ
 	// Create the parent state database
 	statedb := state.New(reader)
 
-	if txIndex == 0 && len(block.Transactions()) == 0 {
+	txns, err := AllBlockTransactions(ctx, block, cfg, blockReader, dbtx)
+	if err != nil {
+		return nil, evmtypes.BlockContext{}, evmtypes.TxContext{}, nil, nil, err
+	}
+
+	if txIndex == 0 && len(txns) == 0 {
 		return nil, evmtypes.BlockContext{}, evmtypes.TxContext{}, statedb, reader, nil
 	}
+
 	getHeader := func(hash libcommon.Hash, n uint64) *types.Header {
-		h, _ := headerReader.HeaderByNumber(ctx, dbtx, n)
+		h, _ := blockReader.HeaderByNumber(ctx, dbtx, n)
 		return h
 	}
+
 	header := block.HeaderNoCopy()
-
 	blockContext := core.NewEVMBlockContext(header, core.GetHashFn(header, getHeader), engine, nil)
-
 	// Recompute transactions up to the target index.
 	signer := types.MakeSigner(cfg, block.NumberU64(), block.Time())
 	if historyV3 {
 		rules := cfg.Rules(blockContext.BlockNumber, blockContext.Time)
-		txn := block.Transactions()[txIndex]
+		txn := txns[txIndex]
 		statedb.SetTxContext(txn.Hash(), block.Hash(), txIndex)
-		msg, _ := txn.AsMessage(*signer, block.BaseFee(), rules)
+		msg, err := txn.AsMessage(*signer, block.BaseFee(), rules)
+		if err != nil {
+			return nil, evmtypes.BlockContext{}, evmtypes.TxContext{}, nil, nil, err
+		}
+
 		if msg.FeeCap().IsZero() && engine != nil {
 			syscall := func(contract libcommon.Address, data []byte) ([]byte, error) {
 				return core.SysCallContract(contract, data, cfg, statedb, header, engine, true /* constCall */)
@@ -70,30 +80,34 @@ func ComputeTxEnv(ctx context.Context, engine consensus.EngineReader, block *typ
 			msg.SetIsFree(engine.IsServiceTransaction(msg.From(), syscall))
 		}
 
-		TxContext := core.NewEVMTxContext(msg)
-		return msg, blockContext, TxContext, statedb, reader, nil
+		txnCtx := core.NewEVMTxContext(msg)
+		txnCtx.TxHash = txn.Hash()
+		return msg, blockContext, txnCtx, statedb, reader, nil
 	}
-	vmenv := vm.NewEVM(blockContext, evmtypes.TxContext{}, statedb, cfg, vm.Config{})
-	rules := vmenv.ChainRules()
 
+	evm := vm.NewEVM(blockContext, evmtypes.TxContext{}, statedb, cfg, vm.Config{})
+	rules := evm.ChainRules()
 	consensusHeaderReader := stagedsync.NewChainReaderImpl(cfg, dbtx, nil, nil)
-
 	logger := log.New("tracing")
 	err = core.InitializeBlockExecution(engine.(consensus.Engine), consensusHeaderReader, header, cfg, statedb, logger)
 	if err != nil {
 		return nil, evmtypes.BlockContext{}, evmtypes.TxContext{}, nil, nil, err
 	}
 
-	for idx, txn := range block.Transactions() {
+	for idx, txn := range txns {
 		select {
 		default:
 		case <-ctx.Done():
 			return nil, evmtypes.BlockContext{}, evmtypes.TxContext{}, nil, nil, ctx.Err()
 		}
+
 		statedb.SetTxContext(txn.Hash(), block.Hash(), idx)
 
-		// Assemble the transaction call message and return if the requested offset
-		msg, _ := txn.AsMessage(*signer, block.BaseFee(), rules)
+		msg, err := txn.AsMessage(*signer, block.BaseFee(), rules)
+		if err != nil {
+			return nil, evmtypes.BlockContext{}, evmtypes.TxContext{}, nil, nil, err
+		}
+
 		if msg.FeeCap().IsZero() && engine != nil {
 			syscall := func(contract libcommon.Address, data []byte) ([]byte, error) {
 				return core.SysCallContract(contract, data, cfg, statedb, header, engine, true /* constCall */)
@@ -101,24 +115,37 @@ func ComputeTxEnv(ctx context.Context, engine consensus.EngineReader, block *typ
 			msg.SetIsFree(engine.IsServiceTransaction(msg.From(), syscall))
 		}
 
-		TxContext := core.NewEVMTxContext(msg)
+		txContext := core.NewEVMTxContext(msg)
+		txContext.TxHash = txn.Hash()
 		if idx == txIndex {
-			return msg, blockContext, TxContext, statedb, reader, nil
+			return msg, blockContext, txContext, statedb, reader, nil
 		}
-		vmenv.Reset(TxContext, statedb)
+
+		evm.Reset(txContext, statedb)
+
 		// Not yet the searched for transaction, execute on top of the current state
-		if _, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(txn.GetGas()).AddBlobGas(txn.GetBlobGas()), true /* refunds */, false /* gasBailout */); err != nil {
+		if txn.IsBorStateSync() {
+			_, err = polygontracer.ApplyBorStateSyncTxn(ctx, dbtx, cfg, blockReader, statedb, state.NewNoopWriter(), rules, evm, txContext, block.Hash(), block.NumberU64())
+		} else {
+			_, err = core.ApplyMessage(evm, msg, new(core.GasPool).AddGas(txn.GetGas()).AddBlobGas(txn.GetBlobGas()), true /* refunds */, false /* gasBailout */)
+		}
+		if err != nil {
 			return nil, evmtypes.BlockContext{}, evmtypes.TxContext{}, nil, nil, fmt.Errorf("transaction %x failed: %w", txn.Hash(), err)
 		}
+
 		// Ensure any modifications are committed to the state
 		// Only delete empty objects if EIP161 (part of Spurious Dragon) is in effect
-		_ = statedb.FinalizeTx(rules, reader.(*state.PlainState))
+		err = statedb.FinalizeTx(rules, reader.(*state.PlainState))
+		if err != nil {
+			return nil, evmtypes.BlockContext{}, evmtypes.TxContext{}, nil, nil, err
+		}
 
-		if idx+1 == len(block.Transactions()) {
-			// Return the state from evaluating all txs in the block, note no msg or TxContext in this case
+		if idx+1 == len(txns) {
+			// Return the state from evaluating all txs in the block, note no msg or txContext in this case
 			return nil, blockContext, evmtypes.TxContext{}, statedb, reader, nil
 		}
 	}
+
 	return nil, evmtypes.BlockContext{}, evmtypes.TxContext{}, nil, nil, fmt.Errorf("transaction index %d out of range for block %x", txIndex, block.Hash())
 }
 
