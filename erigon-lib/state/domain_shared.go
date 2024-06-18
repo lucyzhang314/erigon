@@ -80,8 +80,9 @@ type SharedDomains struct {
 	domains [kv.DomainLen]map[string]dataWithPrevStep
 	storage *btree2.Map[string, dataWithPrevStep]
 
-	dWriter   [kv.DomainLen]*domainBufferedWriter
-	iiWriters [kv.StandaloneIdxLen]*invertedIndexBufferedWriter
+	dWriter    [kv.DomainLen]*domainBufferedWriter
+	iiWriters  [kv.StandaloneIdxLen]*invertedIndexBufferedWriter
+	diiWriters [kv.StandaloneDerivedIdxLen]*invertedIndexBufferedWriter
 
 	currentChangesAccumulator *StateChangeSet
 	pastChangesAccumulator    map[string]*StateChangeSet
@@ -102,6 +103,9 @@ func NewSharedDomains(tx kv.Tx, logger log.Logger) (*SharedDomains, error) {
 
 	sd.aggTx.a.DiscardHistory(kv.CommitmentDomain)
 
+	for id, ii := range sd.aggTx.diis {
+		sd.diiWriters[id] = ii.NewWriter()
+	}
 	for id, ii := range sd.aggTx.iis {
 		sd.iiWriters[id] = ii.NewWriter()
 	}
@@ -180,6 +184,11 @@ func (sd *SharedDomains) Unwind(ctx context.Context, rwTx kv.RwTx, blockUnwindTo
 		}
 	}
 	for _, ii := range sd.aggTx.iis {
+		if _, err := ii.Prune(ctx, rwTx, txUnwindTo, math.MaxUint64, math.MaxUint64, logEvery, true, withWarmup, nil); err != nil {
+			return err
+		}
+	}
+	for _, ii := range sd.aggTx.diis {
 		if _, err := ii.Prune(ctx, rwTx, txUnwindTo, math.MaxUint64, math.MaxUint64, logEvery, true, withWarmup, nil); err != nil {
 			return err
 		}
@@ -562,6 +571,8 @@ func (sd *SharedDomains) IndexAdd(table kv.InvertedIdx, key []byte) (err error) 
 		err = sd.iiWriters[kv.TracesToIdxPos].Add(key)
 	case kv.TblTracesFromIdx:
 		err = sd.iiWriters[kv.TracesFromIdxPos].Add(key)
+	case kv.TblTestIIIdx:
+		err = sd.diiWriters[kv.TestIIIdxPos].Add(key)
 	default:
 		panic(fmt.Errorf("unknown shared index %s", table))
 	}
@@ -597,6 +608,11 @@ func (sd *SharedDomains) SetTxNum(txNum uint64) {
 		}
 	}
 	for _, iiWriter := range sd.iiWriters {
+		if iiWriter != nil {
+			iiWriter.SetTxNum(txNum)
+		}
+	}
+	for _, iiWriter := range sd.diiWriters {
 		if iiWriter != nil {
 			iiWriter.SetTxNum(txNum)
 		}
@@ -787,6 +803,9 @@ func (sd *SharedDomains) Close() {
 		for _, iiWriter := range sd.iiWriters {
 			iiWriter.close()
 		}
+		for _, iiWriter := range sd.diiWriters {
+			iiWriter.close()
+		}
 	}
 
 	if sd.sdCtx != nil {
@@ -795,6 +814,7 @@ func (sd *SharedDomains) Close() {
 }
 
 func (sd *SharedDomains) Flush(ctx context.Context, tx kv.RwTx) error {
+	sd.logger.Info("********************* SD FLUSH")
 	if sd.noFlush > 0 {
 		sd.noFlush--
 	}
@@ -830,6 +850,11 @@ func (sd *SharedDomains) Flush(ctx context.Context, tx kv.RwTx) error {
 				return err
 			}
 		}
+		for _, iiWriter := range sd.diiWriters {
+			if err := iiWriter.Flush(ctx, tx); err != nil {
+				return err
+			}
+		}
 		if dbg.PruneOnFlushTimeout != 0 {
 			_, err = sd.aggTx.PruneSmallBatches(ctx, dbg.PruneOnFlushTimeout, tx)
 			if err != nil {
@@ -843,6 +868,9 @@ func (sd *SharedDomains) Flush(ctx context.Context, tx kv.RwTx) error {
 			}
 		}
 		for _, iiWriter := range sd.iiWriters {
+			iiWriter.close()
+		}
+		for _, iiWriter := range sd.diiWriters {
 			iiWriter.close()
 		}
 	}

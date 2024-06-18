@@ -268,6 +268,8 @@ type Config struct {
 	SilkwormRpcJsonCompatibility bool
 
 	DisableTxPoolGossip bool
+
+	Ots2 bool
 }
 
 type Sync struct {
