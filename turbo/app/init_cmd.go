@@ -29,6 +29,8 @@ import (
 	"github.com/erigontech/erigon-lib/kv"
 	"github.com/erigontech/erigon/cmd/utils"
 	"github.com/erigontech/erigon/core"
+	"github.com/erigontech/erigon/core/tracing"
+	"github.com/erigontech/erigon/eth/tracers"
 	"github.com/erigontech/erigon/node"
 )
 
@@ -53,8 +55,9 @@ It expects the genesis file as argument.`,
 // the zero'd block (i.e. genesis) or will fail hard if it can't succeed.
 func initGenesis(cliCtx *cli.Context) error {
 	var logger log.Logger
+	var tracer *tracers.Tracer
 	var err error
-	if logger, _, _, err = debug.Setup(cliCtx, true /* rootLogger */); err != nil {
+	if logger, tracer, _, _, err = debug.Setup(cliCtx, true /* rootLogger */); err != nil {
 		return err
 	}
 	// Make sure we have a valid genesis JSON
@@ -82,7 +85,15 @@ func initGenesis(cliCtx *cli.Context) error {
 	if err != nil {
 		utils.Fatalf("Failed to open database: %v", err)
 	}
-	_, hash, err := core.CommitGenesisBlock(chaindb, genesis, "", logger)
+
+	var tracingHooks *tracing.Hooks
+	if tracer != nil {
+		tracingHooks = tracer.Hooks
+		if tracer.Hooks != nil && tracer.Hooks.OnBlockchainInit != nil {
+			tracer.Hooks.OnBlockchainInit(genesis.Config)
+		}
+	}
+	_, hash, err := core.CommitGenesisBlock(chaindb, genesis, "", logger, tracingHooks)
 	if err != nil {
 		utils.Fatalf("Failed to write genesis block: %v", err)
 	}

@@ -41,7 +41,7 @@ import (
 func TestEmptyBlock(t *testing.T) {
 	require := require.New(t)
 	genesis := core.GnosisGenesisBlock()
-	genesisBlock, _, err := core.GenesisToBlock(genesis, "", log.Root())
+	genesisBlock, _, err := core.GenesisToBlock(genesis, "", log.Root(), nil)
 	require.NoError(err)
 
 	genesis.Config.TerminalTotalDifficultyPassed = false

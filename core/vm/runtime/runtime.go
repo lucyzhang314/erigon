@@ -27,8 +27,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/erigontech/erigon-lib/log/v3"
-
 	"github.com/holiman/uint256"
 
 	"github.com/erigontech/erigon-lib/chain"
@@ -38,9 +36,12 @@ import (
 	"github.com/erigontech/erigon-lib/kv"
 	"github.com/erigontech/erigon-lib/kv/memdb"
 	"github.com/erigontech/erigon-lib/kv/temporal"
+	"github.com/erigontech/erigon-lib/log/v3"
 	state3 "github.com/erigontech/erigon-lib/state"
+
 	"github.com/erigontech/erigon/core/rawdb"
 	"github.com/erigontech/erigon/core/state"
+	"github.com/erigontech/erigon/core/types"
 	"github.com/erigontech/erigon/core/vm"
 	"github.com/erigontech/erigon/crypto"
 )
@@ -163,6 +164,9 @@ func Execute(code, input []byte, cfg *Config, tempdir string) ([]byte, *state.In
 		sender  = vm.AccountRef(cfg.Origin)
 		rules   = vmenv.ChainRules()
 	)
+	if cfg.EVMConfig.Tracer != nil && cfg.EVMConfig.Tracer.OnTxStart != nil {
+		cfg.EVMConfig.Tracer.OnTxStart(vmenv.GetVMContext(), types.NewTransaction(0, address, cfg.Value, cfg.GasLimit, cfg.GasPrice, input), cfg.Origin)
+	}
 	cfg.State.Prepare(rules, cfg.Origin, cfg.Coinbase, &address, vm.ActivePrecompiles(rules), nil, nil)
 	cfg.State.CreateAccount(address, true)
 	// set the receiver's (the executing contract) code for execution.
@@ -225,6 +229,9 @@ func Create(input []byte, cfg *Config, blockNr uint64) ([]byte, libcommon.Addres
 		sender = vm.AccountRef(cfg.Origin)
 		rules  = vmenv.ChainRules()
 	)
+	if cfg.EVMConfig.Tracer != nil && cfg.EVMConfig.Tracer.OnTxStart != nil {
+		cfg.EVMConfig.Tracer.OnTxStart(vmenv.GetVMContext(), types.NewContractCreation(0, cfg.Value, cfg.GasLimit, cfg.GasPrice, input), cfg.Origin)
+	}
 	cfg.State.Prepare(rules, cfg.Origin, cfg.Coinbase, nil, vm.ActivePrecompiles(rules), nil, nil)
 
 	// Call the code with the given configuration.
@@ -250,6 +257,9 @@ func Call(address libcommon.Address, input []byte, cfg *Config) ([]byte, uint64,
 	sender := cfg.State.GetOrNewStateObject(cfg.Origin)
 	statedb := cfg.State
 	rules := vmenv.ChainRules()
+	if cfg.EVMConfig.Tracer != nil && cfg.EVMConfig.Tracer.OnTxStart != nil {
+		cfg.EVMConfig.Tracer.OnTxStart(vmenv.GetVMContext(), types.NewTransaction(0, address, cfg.Value, cfg.GasLimit, cfg.GasPrice, input), cfg.Origin)
+	}
 	statedb.Prepare(rules, cfg.Origin, cfg.Coinbase, &address, vm.ActivePrecompiles(rules), nil, nil)
 
 	// Call the code with the given configuration.

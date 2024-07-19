@@ -26,13 +26,13 @@ import (
 	"github.com/erigontech/erigon-lib/chain"
 	libcommon "github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/kv"
-
 	"github.com/erigontech/erigon/common/u256"
 	"github.com/erigontech/erigon/core"
 	"github.com/erigontech/erigon/core/state"
 	"github.com/erigontech/erigon/core/types"
 	"github.com/erigontech/erigon/core/vm"
 	"github.com/erigontech/erigon/core/vm/evmtypes"
+	"github.com/erigontech/erigon/eth/tracers"
 	tracersConfig "github.com/erigontech/erigon/eth/tracers/config"
 	"github.com/erigontech/erigon/polygon/bor/borcfg"
 	bortypes "github.com/erigontech/erigon/polygon/bor/types"
@@ -92,6 +92,7 @@ func TraceBorStateSyncTxnTraceAPI(
 	blockHash libcommon.Hash,
 	blockNum uint64,
 	blockTime uint64,
+	tracer *tracers.Tracer,
 ) (*evmtypes.ExecutionResult, error) {
 	stateSyncEvents, err := blockReader.EventsByBlock(ctx, dbTx, blockHash, blockNum)
 	if err != nil {
@@ -100,7 +101,7 @@ func TraceBorStateSyncTxnTraceAPI(
 
 	stateReceiverContract := libcommon.HexToAddress(chainConfig.Bor.(*borcfg.BorConfig).StateReceiverContract)
 	if vmConfig.Tracer != nil {
-		vmConfig.Tracer = NewBorStateSyncTxnTracer(vmConfig.Tracer, len(stateSyncEvents), stateReceiverContract)
+		vmConfig.Tracer = NewBorStateSyncTxnTracer(tracer, len(stateSyncEvents), stateReceiverContract).Hooks
 	}
 
 	txCtx := initStateSyncTxContext(blockNum, blockHash)

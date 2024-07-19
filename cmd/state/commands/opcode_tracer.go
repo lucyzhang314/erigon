@@ -32,23 +32,23 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/spf13/cobra"
 
-	datadir2 "github.com/erigontech/erigon-lib/common/datadir"
-	"github.com/erigontech/erigon-lib/log/v3"
-
 	chain2 "github.com/erigontech/erigon-lib/chain"
 	libcommon "github.com/erigontech/erigon-lib/common"
+	datadir2 "github.com/erigontech/erigon-lib/common/datadir"
 	"github.com/erigontech/erigon-lib/kv"
 	"github.com/erigontech/erigon-lib/kv/mdbx"
-
+	"github.com/erigontech/erigon-lib/log/v3"
 	"github.com/erigontech/erigon/common/debug"
 	"github.com/erigontech/erigon/consensus"
 	"github.com/erigontech/erigon/consensus/ethash"
 	"github.com/erigontech/erigon/core"
 	"github.com/erigontech/erigon/core/rawdb"
 	"github.com/erigontech/erigon/core/state"
+	"github.com/erigontech/erigon/core/tracing"
 	"github.com/erigontech/erigon/core/types"
 	"github.com/erigontech/erigon/core/vm"
 	"github.com/erigontech/erigon/eth/ethconfig"
+	"github.com/erigontech/erigon/eth/tracers"
 	"github.com/erigontech/erigon/turbo/rpchelper"
 	"github.com/erigontech/erigon/turbo/snapshotsync/freezeblocks"
 )
@@ -131,7 +131,7 @@ type opcodeTracer struct {
 	saveBblocks bool
 	blockNumber uint64
 	depth       int
-	env         *vm.EVM
+	env         *tracing.VMContext
 }
 
 func NewOpcodeTracer(blockNum uint64, saveOpcodes bool, saveBblocks bool) *opcodeTracer {
@@ -180,9 +180,17 @@ type blockTxs struct {
 	Txs      slicePtrTx
 }
 
-func (ot *opcodeTracer) CaptureTxStart(gasLimit uint64) {}
-
-func (ot *opcodeTracer) CaptureTxEnd(restGas uint64) {}
+func (ot *opcodeTracer) Tracer() *tracers.Tracer {
+	return &tracers.Tracer{
+		Hooks: &tracing.Hooks{
+			OnTxStart: ot.OnTxStart,
+			OnEnter:   ot.OnEnter,
+			OnExit:    ot.OnExit,
+			OnFault:   ot.OnFault,
+			OnOpcode:  ot.OnOpcode,
+		},
+	}
+}
 
 func (ot *opcodeTracer) captureStartOrEnter(from, to libcommon.Address, create bool, input []byte) {
 	//fmt.Fprint(ot.summary, ot.lastLine)
@@ -212,15 +220,14 @@ func (ot *opcodeTracer) captureStartOrEnter(from, to libcommon.Address, create b
 	ot.stack = append(ot.stack, &newTx)
 }
 
-func (ot *opcodeTracer) CaptureStart(env *vm.EVM, from libcommon.Address, to libcommon.Address, precompile bool, create bool, input []byte, gas uint64, value *uint256.Int, code []byte) {
+func (ot *opcodeTracer) OnTxStart(env *tracing.VMContext, tx types.Transaction, from libcommon.Address) {
 	ot.env = env
 	ot.depth = 0
-	ot.captureStartOrEnter(from, to, create, input)
 }
 
-func (ot *opcodeTracer) CaptureEnter(typ vm.OpCode, from libcommon.Address, to libcommon.Address, precompile bool, create bool, input []byte, gas uint64, value *uint256.Int, code []byte) {
-	ot.depth++
-	ot.captureStartOrEnter(from, to, create, input)
+func (ot *opcodeTracer) OnEnter(depth int, typ byte, from libcommon.Address, to libcommon.Address, precompile bool, input []byte, gas uint64, value *uint256.Int, code []byte) {
+	ot.depth = depth
+	ot.captureStartOrEnter(from, to, vm.OpCode(typ) == vm.CREATE, input)
 }
 
 func (ot *opcodeTracer) captureEndOrExit(err error) {
@@ -255,18 +262,13 @@ func (ot *opcodeTracer) captureEndOrExit(err error) {
 	}
 }
 
-func (ot *opcodeTracer) CaptureEnd(output []byte, usedGas uint64, err error) {
+func (ot *opcodeTracer) OnExit(depth int, output []byte, gasUsed uint64, err error, reverted bool) {
 	ot.captureEndOrExit(err)
+	ot.depth = depth
 }
 
-func (ot *opcodeTracer) CaptureExit(output []byte, usedGas uint64, err error) {
-	ot.captureEndOrExit(err)
-	ot.depth--
-}
-
-func (ot *opcodeTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, opDepth int, err error) {
+func (ot *opcodeTracer) OnOpcode(pc uint64, op byte, gas, cost uint64, scope tracing.OpContext, rData []byte, opDepth int, err error) {
 	//CaptureState sees the system as it is before the opcode is run. It seems to never get an error.
-	contract := scope.Contract
 
 	//sanity check
 	if pc > uint64(MaxUint16) {
@@ -298,8 +300,8 @@ func (ot *opcodeTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, 
 		currentEntry.TxHash = new(libcommon.Hash)
 		currentEntry.TxHash.SetBytes(currentTxHash.Bytes())
 		currentEntry.CodeHash = new(libcommon.Hash)
-		currentEntry.CodeHash.SetBytes(contract.CodeHash.Bytes())
-		currentEntry.CodeSize = len(contract.Code)
+		currentEntry.CodeHash.SetBytes(scope.CodeHash().Bytes())
+		currentEntry.CodeSize = len(scope.Code())
 		if ot.saveOpcodes {
 			currentEntry.Opcodes = make([]opcode, 0, 200)
 		}
@@ -327,7 +329,7 @@ func (ot *opcodeTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, 
 	//sanity check
 	if currentEntry.OpcodeFault != "" {
 		panic(fmt.Sprintf("Running opcodes but fault is already set. txFault=%s, opFault=%v, op=%s",
-			currentEntry.OpcodeFault, err, op.String()))
+			currentEntry.OpcodeFault, err, vm.OpCode(op).String()))
 	}
 
 	// if it is a Fault, check whether we already have a record of the opcode. If so, just add the flag to it
@@ -339,11 +341,11 @@ func (ot *opcodeTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, 
 
 	faultAndRepeated := false
 
-	if pc16 == currentEntry.lastPc16 && op == currentEntry.lastOp {
+	if pc16 == currentEntry.lastPc16 && vm.OpCode(op) == currentEntry.lastOp {
 		//it's a repeated opcode. We assume this only happens when it's a Fault.
 		if err == nil {
 			panic(fmt.Sprintf("Duplicate opcode with no fault. bn=%d txaddr=%s pc=%x op=%s",
-				ot.blockNumber, currentEntry.TxnAddr, pc, op.String()))
+				ot.blockNumber, currentEntry.TxnAddr, pc, vm.OpCode(op).String()))
 		}
 		faultAndRepeated = true
 		//ot.fsumWriter.WriteString("Fault for EXISTING opcode\n")
@@ -355,7 +357,7 @@ func (ot *opcodeTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, 
 	} else {
 		// it's a new opcode
 		if ot.saveOpcodes {
-			newOpcode := opcode{pc16, op, errstr}
+			newOpcode := opcode{pc16, vm.OpCode(op), errstr}
 			currentEntry.Opcodes = append(currentEntry.Opcodes, newOpcode)
 		}
 	}
@@ -386,24 +388,23 @@ func (ot *opcodeTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, 
 
 				//sanity check
 				// we're starting a bblock, so either we're in PC=0 or we have OP=JUMPDEST
-				if pc16 != 0 && op.String() != "JUMPDEST" {
+				if pc16 != 0 && vm.OpCode(op).String() != "JUMPDEST" {
 					panic(fmt.Sprintf("Bad bblock? lastpc=%x, lastOp=%s; pc=%x, op=%s; bn=%d txaddr=%s tx=%d-%s",
-						currentEntry.lastPc16, currentEntry.lastOp.String(), pc, op.String(), ot.blockNumber, currentEntry.TxnAddr, currentEntry.Depth, currentEntry.TxHash.String()))
+						currentEntry.lastPc16, currentEntry.lastOp.String(), pc, vm.OpCode(op).String(), ot.blockNumber, currentEntry.TxnAddr, currentEntry.Depth, currentEntry.TxHash.String()))
 				}
 			}
 		}
 	}
 
 	currentEntry.lastPc16 = pc16
-	currentEntry.lastOp = op
+	currentEntry.lastOp = vm.OpCode(op)
 }
 
-func (ot *opcodeTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, opDepth int, err error) {
+func (ot *opcodeTracer) OnFault(pc uint64, op byte, gas, cost uint64, scope tracing.OpContext, opDepth int, err error) {
 	// CaptureFault sees the system as it is after the fault happens
 
 	// CaptureState might have already recorded the opcode before it failed. Let's centralize the processing there.
-	ot.CaptureState(pc, op, gas, cost, scope, nil, opDepth, err)
-
+	ot.OnOpcode(pc, op, gas, cost, scope, nil, opDepth, err)
 }
 
 type segPrefix struct {
@@ -442,7 +443,7 @@ func OpcodeTracer(genesis *types.Genesis, blockNum uint64, chaindata string, num
 	blockReader := freezeblocks.NewBlockReader(freezeblocks.NewRoSnapshots(ethconfig.BlocksFreezing{Enabled: false}, dirs.Snap, 0, log.New()), nil /* BorSnapshots */)
 
 	chainConfig := genesis.Config
-	vmConfig := vm.Config{Tracer: ot, Debug: true}
+	vmConfig := vm.Config{Tracer: ot.Tracer().Hooks, Debug: true}
 
 	noOpWriter := state.NewNoopWriter()
 
