@@ -1758,7 +1758,7 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 	cfg.CaplinDiscoveryTCPPort = ctx.Uint64(CaplinDiscoveryTCPPortFlag.Name)
 	cfg.SentinelAddr = ctx.String(SentinelAddrFlag.Name)
 	cfg.SentinelPort = ctx.Uint64(SentinelPortFlag.Name)
-
+	fmt.Println("-------------> NetworkID: ", cfg.NetworkID)
 	chain := ctx.String(ChainFlag.Name) // mainnet by default
 	if ctx.IsSet(NetworkIdFlag.Name) {
 		cfg.NetworkID = ctx.Uint64(NetworkIdFlag.Name)
@@ -1768,7 +1768,8 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 	} else {
 		cfg.NetworkID = params.NetworkIDByChainName(chain)
 	}
-
+	fmt.Println("CFG:GENESIS: ", cfg.Genesis)
+	fmt.Println("-------------> NetworkID: ", cfg.NetworkID)
 	cfg.Dirs = nodeConfig.Dirs
 	cfg.Snapshot.KeepBlocks = ctx.Bool(SnapKeepBlocksFlag.Name)
 	cfg.Snapshot.ProduceE2 = !ctx.Bool(SnapStopFlag.Name)
@@ -1870,6 +1871,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 		if cfg.NetworkID == 1 {
 			SetDNSDiscoveryDefaults(cfg, params.MainnetGenesisHash)
 		}
+	case "interop":
+		genesis := core.InteropGenesisBlock()
+		cfg.Genesis = genesis
 	case networkname.DevChainName:
 		// Create new developer account or reuse existing one
 		developer := cfg.Miner.Etherbase
@@ -1902,6 +1906,7 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 	if ctx.IsSet(TxPoolGossipDisableFlag.Name) {
 		cfg.DisableTxPoolGossip = ctx.Bool(TxPoolGossipDisableFlag.Name)
 	}
+	fmt.Println("CFG.GENESIS.ALLOC==nil ", cfg.Genesis.Alloc == nil)
 }
 
 // SetDNSDiscoveryDefaults configures DNS discovery with the given URL if
