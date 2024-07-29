@@ -82,8 +82,9 @@ type ExecuteBlockCfg struct {
 	syncCfg   ethconfig.Sync
 	genesis   *types.Genesis
 
-	silkworm        *silkworm.Silkworm
-	blockProduction bool
+	silkworm                *silkworm.Silkworm
+	blockProduction         bool
+	alwaysGenerateChangeSet bool
 }
 
 func StageExecuteBlocksCfg(
@@ -96,6 +97,7 @@ func StageExecuteBlocksCfg(
 	accumulator *shards.Accumulator,
 	stateStream bool,
 	badBlockHalt bool,
+	alwaysGenerateChangeSet bool,
 
 	dirs datadir.Dirs,
 	blockReader services.FullBlockReader,
@@ -105,22 +107,23 @@ func StageExecuteBlocksCfg(
 	silkworm *silkworm.Silkworm,
 ) ExecuteBlockCfg {
 	return ExecuteBlockCfg{
-		db:           db,
-		prune:        pm,
-		batchSize:    batchSize,
-		chainConfig:  chainConfig,
-		engine:       engine,
-		vmConfig:     vmConfig,
-		dirs:         dirs,
-		accumulator:  accumulator,
-		stateStream:  stateStream,
-		badBlockHalt: badBlockHalt,
-		blockReader:  blockReader,
-		hd:           hd,
-		genesis:      genesis,
-		historyV3:    true,
-		syncCfg:      syncCfg,
-		silkworm:     silkworm,
+		db:                      db,
+		prune:                   pm,
+		batchSize:               batchSize,
+		chainConfig:             chainConfig,
+		engine:                  engine,
+		vmConfig:                vmConfig,
+		dirs:                    dirs,
+		accumulator:             accumulator,
+		stateStream:             stateStream,
+		badBlockHalt:            badBlockHalt,
+		blockReader:             blockReader,
+		hd:                      hd,
+		genesis:                 genesis,
+		historyV3:               true,
+		syncCfg:                 syncCfg,
+		silkworm:                silkworm,
+		alwaysGenerateChangeSet: alwaysGenerateChangeSet,
 	}
 }
 
@@ -369,9 +372,9 @@ func PruneExecutionStage(s *PruneState, tx kv.RwTx, cfg ExecuteBlockCfg, ctx con
 		defer tx.Rollback()
 	}
 	if s.ForwardProgress > config3.MaxReorgDepthV3 {
-		// (chunkLen is 8Kb) * (1_000 chunks) = 8mb
+		// (chunkLen is 8Kb) * (256 chunks) = 2mb
 		// Some blocks on bor-mainnet have 400 chunks of diff = 3mb
-		var pruneDiffsLimitOnChainTip = 1_000
+		var pruneDiffsLimitOnChainTip = 256
 		if s.CurrentSyncCycle.IsInitialCycle {
 			pruneDiffsLimitOnChainTip *= 10
 		}

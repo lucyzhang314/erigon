@@ -69,7 +69,7 @@ import (
 var execStepsInDB = metrics.NewGauge(`exec_steps_in_db`) //nolint
 var execRepeats = metrics.NewCounter(`exec_repeats`)     //nolint
 var execTriggers = metrics.NewCounter(`exec_triggers`)   //nolint
-const changesetBlockRange = 1_000                        // Generate changeset only if execution of blocks <= changesetBlockRange
+const changesetBlockRange = 256                          // Generate changeset only if execution of blocks <= changesetBlockRange
 
 func NewProgress(prevOutputBlockNum, commitThreshold uint64, workersCount int, logPrefix string, logger log.Logger) *Progress {
 	return &Progress{prevTime: time.Now(), prevOutputBlockNum: prevOutputBlockNum, commitThreshold: commitThreshold, workersCount: workersCount, logPrefix: logPrefix, logger: logger}
@@ -318,7 +318,7 @@ func ExecV3(ctx context.Context,
 	blockNum = doms.BlockNum()
 	outputTxNum.Store(doms.TxNum())
 
-	shouldGenerateChangesets := maxBlockNum-blockNum <= changesetBlockRange
+	shouldGenerateChangesets := maxBlockNum-blockNum <= changesetBlockRange || cfg.alwaysGenerateChangeSet
 	if blockNum < cfg.blockReader.FrozenBlocks() {
 		shouldGenerateChangesets = false
 	}
@@ -882,7 +882,9 @@ Loop:
 
 			select {
 			case <-logEvery.C:
+				stepsInMem := rawdbhelpers.IdxStepsCountV3WithLstTxNum(applyTx, doms.TxNum())
 				stepsInDB := rawdbhelpers.IdxStepsCountV3(applyTx)
+				hasEnoughToPrune := (stepsInMem > 1.1 && !useExternalTx) || stepsInDB > 1.1
 				progress.Log(rs, in, rws, count, inputBlockNum.Load(), outputBlockNum.GetValueUint64(), outputTxNum.Load(), execRepeats.GetValueUint64(), stepsInDB, shouldGenerateChangesets)
 				//if applyTx.(state2.HasAggTx).AggTx().(*state2.AggregatorRoTx).CanPrune(applyTx, outputTxNum.Load()) {
 				//	//small prune cause MDBX_TXN_FULL
@@ -892,7 +894,8 @@ Loop:
 				//}
 				// If we skip post evaluation, then we should compute root hash ASAP for fail-fast
 				aggregatorRo := applyTx.(state2.HasAggTx).AggTx().(*state2.AggregatorRoTx)
-				if !skipPostEvaluation && (rs.SizeEstimate() < commitThreshold || inMemExec) && !aggregatorRo.CanPrune(applyTx, outputTxNum.Load()) {
+
+				if !skipPostEvaluation && (rs.SizeEstimate() < commitThreshold || inMemExec) && !hasEnoughToPrune {
 					break
 				}
 				var (
