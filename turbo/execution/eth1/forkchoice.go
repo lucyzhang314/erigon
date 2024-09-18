@@ -390,12 +390,12 @@ func (e *EthereumExecutionModule) updateForkChoice(ctx context.Context, original
 	flushExtendingFork := blockHash == e.forkValidator.ExtendingForkHeadHash()
 	if flushExtendingFork {
 		e.logger.Debug("[updateForkchoice] Fork choice update: flushing in-memory state (built by previous newPayload)")
-		// Send forkchoice early (We already know the fork is valid)
-		sendForkchoiceReceiptWithoutWaiting(outcomeCh, &execution.ForkChoiceReceipt{
-			LatestValidHash: gointerfaces.ConvertHashToH256(blockHash),
-			Status:          execution.ExecutionStatus_Success,
-			ValidationError: validationError,
-		}, false)
+		// // Send forkchoice early (We already know the fork is valid)
+		// sendForkchoiceReceiptWithoutWaiting(outcomeCh, &execution.ForkChoiceReceipt{
+		// 	LatestValidHash: gointerfaces.ConvertHashToH256(blockHash),
+		// 	Status:          execution.ExecutionStatus_Success,
+		// 	ValidationError: validationError,
+		// }, false)
 		if err := e.forkValidator.FlushExtendingFork(tx, e.accumulator); err != nil {
 			sendForkchoiceErrorWithoutWaiting(e.logger, outcomeCh, err, flushExtendingFork)
 			return
