@@ -726,6 +726,7 @@ type DomainRoTx struct {
 
 	d *Domain
 
+	btcursors  []*Cursor
 	getters    []*seg.Reader
 	readers    []*BtIndex
 	idxReaders []*recsplit.IndexReader
@@ -745,11 +746,27 @@ func domainReadMetric(name kv.Domain, level int) metrics.Summary {
 	return mxsKVGet[name][level]
 }
 
+func (dt *DomainRoTx) getCursorFromFile(i int, filekey []byte) ([]byte, bool, error) {
+	if !(UseBtree || UseBpsTree) {
+		panic("not implemented")
+	}
+
+	cur := dt.statefulBtree(i)
+	cur.getter = dt.statelessGetter(i)
+	found, err := cur.LookAround(filekey)
+	if err != nil {
+		return nil, false, err
+	}
+	if found {
+		return cur.Value(), true, nil
+	}
+	return nil, false, nil
+}
+
 func (dt *DomainRoTx) getLatestFromFile(i int, filekey []byte) ([]byte, bool, error) {
 	if dbg.KVReadLevelledMetrics {
 		defer domainReadMetric(dt.name, i).ObserveDuration(time.Now())
 	}
-
 	g := dt.statelessGetter(i)
 	if !(UseBtree || UseBpsTree) {
 		reader := dt.statelessIdxReader(i)
@@ -1416,6 +1433,58 @@ var (
 	UseBtree = true // if true, will use btree for all files
 )
 
+func (dt *DomainRoTx) getFromFilesCursor(filekey []byte) (v []byte, found bool, fileStartTxNum uint64, fileEndTxNum uint64, err error) {
+	hi, _ := dt.ht.iit.hashKey(filekey)
+
+	for i := len(dt.files) - 1; i >= 0; i-- {
+		if dt.d.indexList&withExistence != 0 {
+			//if dt.files[i].src.existence == nil {
+			//	panic(dt.files[i].src.decompressor.FileName())
+			//}
+			if dt.files[i].src.existence != nil {
+				if !dt.files[i].src.existence.ContainsHash(hi) {
+					if traceGetLatest == dt.d.filenameBase {
+						fmt.Printf("GetLatest(%s, %x) -> existence index %s -> false\n", dt.d.filenameBase, filekey, dt.files[i].src.existence.FileName)
+					}
+					continue
+				} else {
+					if traceGetLatest == dt.d.filenameBase {
+						fmt.Printf("GetLatest(%s, %x) -> existence index %s -> true\n", dt.d.filenameBase, filekey, dt.files[i].src.existence.FileName)
+					}
+				}
+			} else {
+				if traceGetLatest == dt.d.filenameBase {
+					fmt.Printf("GetLatest(%s, %x) -> existence index is nil %s\n", dt.d.filenameBase, filekey, dt.files[i].src.decompressor.FileName())
+				}
+			}
+		}
+
+		//t := time.Now()
+		v, found, err = dt.getCursorFromFile(i, filekey)
+		// v, found, err = dt.getFromFile(i, filekey)
+		if err != nil {
+			return nil, false, 0, 0, err
+		}
+		if !found {
+			if traceGetLatest == dt.d.filenameBase {
+				fmt.Printf("GetLatest(%s, %x) -> not found in file %s\n", dt.d.filenameBase, filekey, dt.files[i].src.decompressor.FileName())
+			}
+			//	LatestStateReadGrindNotFound.ObserveDuration(t)
+			continue
+		}
+		if traceGetLatest == dt.d.filenameBase {
+			fmt.Printf("GetLatest(%s, %x) -> found in file %s\n", dt.d.filenameBase, filekey, dt.files[i].src.decompressor.FileName())
+		}
+		//LatestStateReadGrind.ObserveDuration(t)
+		return v, true, dt.files[i].startTxNum, dt.files[i].endTxNum, nil
+	}
+	if traceGetLatest == dt.d.filenameBase {
+		fmt.Printf("GetLatest(%s, %x) -> not found in %d files\n", dt.d.filenameBase, filekey, len(dt.files))
+	}
+
+	return nil, false, 0, 0, nil
+}
+
 func (dt *DomainRoTx) getFromFiles(filekey []byte) (v []byte, found bool, fileStartTxNum uint64, fileEndTxNum uint64, err error) {
 	if len(dt.files) == 0 {
 		return
@@ -1454,7 +1523,8 @@ func (dt *DomainRoTx) getFromFiles(filekey []byte) (v []byte, found bool, fileSt
 			}
 		}
 
-		v, found, err = dt.getLatestFromFile(i, filekey)
+		v, found, err = dt.getCursorFromFile(i, filekey)
+		// v, found, err = dt.getLatestFromFile(i, filekey)
 		if err != nil {
 			return nil, false, 0, 0, err
 		}
@@ -1544,6 +1614,18 @@ func (dt *DomainRoTx) statelessGetter(i int) *seg.Reader {
 	if r == nil {
 		r = seg.NewReader(dt.files[i].src.decompressor.MakeGetter(), dt.d.compression)
 		dt.getters[i] = r
+	}
+	return r
+}
+
+func (dt *DomainRoTx) statefulBtree(i int) *Cursor {
+	if dt.btcursors == nil {
+		dt.btcursors = make([]*Cursor, len(dt.files))
+	}
+	r := dt.btcursors[i]
+	if r == nil {
+		r = dt.statelessBtree(i).newCursor(context.Background(), nil, nil, 0, dt.statelessGetter(i))
+		dt.btcursors[i] = r
 	}
 	return r
 }

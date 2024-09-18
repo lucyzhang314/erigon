@@ -24,6 +24,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ledgerwatch/erigon/core/rawdb"
+
+	"github.com/ledgerwatch/erigon-lib/common/datadir"
+	"github.com/ledgerwatch/erigon-lib/kv/temporal"
+
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 	checker "gopkg.in/check.v1"

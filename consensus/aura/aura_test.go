@@ -17,10 +17,11 @@
 package aura_test
 
 import (
-	"github.com/erigontech/erigon-lib/common/datadir"
 	"math/big"
 	"strings"
 	"testing"
+
+	"github.com/erigontech/erigon-lib/common/datadir"
 
 	"github.com/stretchr/testify/require"
 

@@ -19,12 +19,13 @@ package snapcfg
 import (
 	_ "embed"
 	"encoding/json"
-	"github.com/pkg/errors"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/pkg/errors"
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/tidwall/btree"
