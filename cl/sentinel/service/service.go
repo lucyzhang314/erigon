@@ -23,9 +23,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -368,12 +370,39 @@ func (s *SentinelServer) SetSubscribeExpiry(ctx context.Context, expiryReq *sent
 	return &sentinelrpc.EmptyMessage{}, nil
 }
 
+var l sync.Mutex
+
+var a = map[string]uint64{}
+
+func recordData(name string, bytes int) {
+	l.Lock()
+	defer l.Unlock()
+	if !gossip.IsTopicBeaconAttestation(name) && !strings.Contains(name, gossip.TopicNameBeaconAggregateAndProof) {
+		return
+	}
+	a[name] += uint64(bytes)
+	// dump it as json to data.json
+	f, err := os.Create("data.json")
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString("{\n")
+	for k, v := range a {
+		_, _ = f.WriteString(fmt.Sprintf(`"%s":%d,`, k, v))
+	}
+	_, _ = f.WriteString("\n}")
+
+	f.Sync()
+}
+
 func (s *SentinelServer) handleGossipPacket(pkt *sentinel.GossipMessage) error {
 	var err error
 	s.logger.Trace("[Sentinel Gossip] Received Packet", "topic", pkt.TopicName)
 
 	data := pkt.Data
 	topic := pkt.TopicName
+	recordData(topic, len(data))
 	// If we use snappy codec then decompress it accordingly.
 	if strings.Contains(topic, sentinel.SSZSnappyCodec) {
 		data, err = utils.DecompressSnappy(data)
