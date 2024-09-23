@@ -366,8 +366,9 @@ func CustomTraceMapReduce(fromBlock, toBlock uint64, consumer TraceConsumer, ctx
 	log.Info("[Receipt] batch start", "fromBlock", fromBlock, "toBlock", toBlock, "workers", cfg.Workers)
 	br := cfg.BlockReader
 	chainConfig := cfg.ChainConfig
+
 	getHeaderFunc := func(hash common.Hash, number uint64) (h *types.Header) {
-		if tx != nil {
+		if cfg.Workers == 1 {
 			h, err = cfg.BlockReader.Header(ctx, tx, hash, number)
 			if err != nil {
 				panic(err)
