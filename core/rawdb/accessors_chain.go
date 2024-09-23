@@ -248,7 +248,7 @@ func WriteForkchoiceFinalized(db kv.Putter, hash common.Hash) {
 func ReadHeaderRLP(db kv.Getter, hash common.Hash, number uint64) rlp.RawValue {
 	data, err := db.GetOne(kv.Headers, dbutils.HeaderKey(number, hash))
 	if err != nil {
-		log.Error("ReadHeaderRLP failed", "err", err)
+		log.Error("ReadHeaderRLP failed", "err", err, "stack", dbg.Stack())
 	}
 	return data
 }
