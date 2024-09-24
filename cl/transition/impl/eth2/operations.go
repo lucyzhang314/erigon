@@ -533,7 +533,7 @@ func (I *impl) ProcessBlsToExecutionChange(
 
 func (I *impl) ProcessAttestations(
 	s abstract.BeaconState,
-	attestations *solid.ListSSZ[*solid.Attestation],
+	attestations *solid.ListSSZ[solid.Attestation],
 ) error {
 	attestingIndiciesSet := make([][]uint64, attestations.Len())
 	h := metrics.NewHistTimer("beacon_process_attestations")
@@ -541,7 +541,7 @@ func (I *impl) ProcessAttestations(
 
 	c := h.Tag("attestation_step", "process")
 	var err error
-	if err := solid.RangeErr[*solid.Attestation](attestations, func(i int, a *solid.Attestation, _ int) error {
+	if err := solid.RangeErr[solid.Attestation](attestations, func(i int, a solid.Attestation, _ int) error {
 		if attestingIndiciesSet[i], err = I.processAttestation(s, a, baseRewardPerIncrement); err != nil {
 			return err
 		}
@@ -571,7 +571,7 @@ func (I *impl) ProcessAttestations(
 
 func (I *impl) processAttestationPostAltair(
 	s abstract.BeaconState,
-	attestation *solid.Attestation,
+	attestation solid.Attestation,
 	baseRewardPerIncrement uint64,
 ) ([]uint64, error) {
 	data := attestation.AttestantionData()
@@ -649,7 +649,7 @@ func (I *impl) processAttestationPostAltair(
 // processAttestationsPhase0 implements the rules for phase0 processing.
 func (I *impl) processAttestationPhase0(
 	s abstract.BeaconState,
-	attestation *solid.Attestation,
+	attestation solid.Attestation,
 ) ([]uint64, error) {
 	data := attestation.AttestantionData()
 	committee, err := s.GetBeaconCommitee(data.Slot(), data.CommitteeIndex())
@@ -768,7 +768,7 @@ func (I *impl) processAttestationPhase0(
 	return indicies, nil
 }
 
-func IsAttestationApplicable(s abstract.BeaconState, attestation *solid.Attestation) error {
+func IsAttestationApplicable(s abstract.BeaconState, attestation solid.Attestation) error {
 	data := attestation.AttestantionData()
 	currentEpoch := state.Epoch(s)
 	previousEpoch := state.PreviousEpoch(s)
@@ -796,7 +796,7 @@ func IsAttestationApplicable(s abstract.BeaconState, attestation *solid.Attestat
 // ProcessAttestation takes an attestation and process it.
 func (I *impl) processAttestation(
 	s abstract.BeaconState,
-	attestation *solid.Attestation,
+	attestation solid.Attestation,
 	baseRewardPerIncrement uint64,
 ) ([]uint64, error) {
 	// Prelimary checks.
@@ -812,11 +812,11 @@ func (I *impl) processAttestation(
 
 func verifyAttestations(
 	s abstract.BeaconState,
-	attestations *solid.ListSSZ[*solid.Attestation],
+	attestations *solid.ListSSZ[solid.Attestation],
 	attestingIndicies [][]uint64,
 ) (bool, error) {
 	indexedAttestations := make([]*cltypes.IndexedAttestation, 0, attestations.Len())
-	attestations.Range(func(idx int, a *solid.Attestation, _ int) bool {
+	attestations.Range(func(idx int, a solid.Attestation, _ int) bool {
 		idxAttestations := state.GetIndexedAttestation(a, attestingIndicies[idx])
 		indexedAttestations = append(indexedAttestations, idxAttestations)
 		return true

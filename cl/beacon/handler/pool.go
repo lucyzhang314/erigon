@@ -76,7 +76,7 @@ func (a *ApiHandler) GetEthV1BeaconPoolAttestations(w http.ResponseWriter, r *ht
 }
 
 func (a *ApiHandler) PostEthV1BeaconPoolAttestations(w http.ResponseWriter, r *http.Request) {
-	req := []*solid.Attestation{}
+	req := []*solid.AttestationDeneb{}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		beaconhttp.NewEndpointError(http.StatusBadRequest, err).WriteTo(w)
 		return

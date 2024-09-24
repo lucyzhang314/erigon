@@ -38,7 +38,7 @@ type Impl struct {
 	FnProcessSyncAggregate        func(s abstract.BeaconState, sync *cltypes.SyncAggregate) error
 	FnProcessProposerSlashing     func(s abstract.BeaconState, propSlashing *cltypes.ProposerSlashing) error
 	FnProcessAttesterSlashing     func(s abstract.BeaconState, attSlashing *cltypes.AttesterSlashing) error
-	FnProcessAttestations         func(s abstract.BeaconState, attestations *solid.ListSSZ[*solid.Attestation]) error
+	FnProcessAttestations         func(s abstract.BeaconState, attestations *solid.ListSSZ[solid.Attestation]) error
 	FnProcessDeposit              func(s abstract.BeaconState, deposit *cltypes.Deposit) error
 	FnProcessVoluntaryExit        func(s abstract.BeaconState, signedVoluntaryExit *cltypes.SignedVoluntaryExit) error
 	FnProcessBlsToExecutionChange func(state abstract.BeaconState, signedChange *cltypes.SignedBLSToExecutionChange) error
@@ -84,7 +84,7 @@ func (i Impl) ProcessAttesterSlashing(s abstract.BeaconState, attSlashing *cltyp
 	return i.FnProcessAttesterSlashing(s, attSlashing)
 }
 
-func (i Impl) ProcessAttestations(s abstract.BeaconState, attestations *solid.ListSSZ[*solid.Attestation]) error {
+func (i Impl) ProcessAttestations(s abstract.BeaconState, attestations *solid.ListSSZ[solid.Attestation]) error {
 	return i.FnProcessAttestations(s, attestations)
 }
 

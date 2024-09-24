@@ -227,7 +227,7 @@ func (b *blockService) importBlockOperations(block *cltypes.SignedBeaconBlock) {
 		}
 	}()
 	start := time.Now()
-	block.Block.Body.Attestations.Range(func(idx int, a *solid.Attestation, total int) bool {
+	block.Block.Body.Attestations.Range(func(idx int, a solid.Attestation, total int) bool {
 		if err := b.forkchoiceStore.OnAttestation(a, true, false); err != nil {
 			log.Debug("bad attestation received", "err", err)
 		}

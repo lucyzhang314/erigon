@@ -42,7 +42,7 @@ type aggregationPoolImpl struct {
 	netConfig      *clparams.NetworkConfig
 	ethClock       eth_clock.EthereumClock
 	aggregatesLock sync.RWMutex
-	aggregates     map[common.Hash]*solid.Attestation
+	aggregates     map[common.Hash]solid.Attestation
 }
 
 func NewAggregationPool(
@@ -56,13 +56,13 @@ func NewAggregationPool(
 		beaconConfig:   beaconConfig,
 		netConfig:      netConfig,
 		aggregatesLock: sync.RWMutex{},
-		aggregates:     make(map[common.Hash]*solid.Attestation),
+		aggregates:     make(map[common.Hash]solid.Attestation),
 	}
 	go p.sweepStaleAtt(ctx)
 	return p
 }
 
-func (p *aggregationPoolImpl) AddAttestation(inAtt *solid.Attestation) error {
+func (p *aggregationPoolImpl) AddAttestation(inAtt solid.Attestation) error {
 	// use hash of attestation data as key
 	hashRoot, err := inAtt.AttestantionData().HashSSZ()
 	if err != nil {
@@ -109,7 +109,7 @@ func (p *aggregationPoolImpl) AddAttestation(inAtt *solid.Attestation) error {
 	return nil
 }
 
-func (p *aggregationPoolImpl) GetAggregatationByRoot(root common.Hash) *solid.Attestation {
+func (p *aggregationPoolImpl) GetAggregatationByRoot(root common.Hash) solid.Attestation {
 	p.aggregatesLock.RLock()
 	defer p.aggregatesLock.RUnlock()
 	return p.aggregates[root]

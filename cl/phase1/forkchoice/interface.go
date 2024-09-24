@@ -75,13 +75,13 @@ type ForkChoiceStorageReader interface {
 	GetValidatorSet(blockRoot libcommon.Hash) (*solid.ValidatorSet, error)
 	GetCurrentPartecipationIndicies(blockRoot libcommon.Hash) (*solid.BitList, error)
 
-	ValidateOnAttestation(attestation *solid.Attestation) error
+	ValidateOnAttestation(attestation solid.Attestation) error
 	IsRootOptimistic(root common.Hash) bool
 	IsHeadOptimistic() bool
 }
 
 type ForkChoiceStorageWriter interface {
-	OnAttestation(attestation *solid.Attestation, fromBlock, insert bool) error
+	OnAttestation(attestation solid.Attestation, fromBlock, insert bool) error
 	OnAttesterSlashing(attesterSlashing *cltypes.AttesterSlashing, test bool) error
 	OnBlock(
 		ctx context.Context,
@@ -93,5 +93,5 @@ type ForkChoiceStorageWriter interface {
 	AddPreverifiedBlobSidecar(blobSidecar *cltypes.BlobSidecar) error
 	OnTick(time uint64)
 	SetSynced(synced bool)
-	ProcessAttestingIndicies(attestation *solid.Attestation, attestionIndicies []uint64)
+	ProcessAttestingIndicies(attestation solid.Attestation, attestionIndicies []uint64)
 }

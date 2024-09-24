@@ -227,7 +227,7 @@ func (f *ForkChoiceStorageMock) Time() uint64 {
 }
 
 func (f *ForkChoiceStorageMock) OnAttestation(
-	attestation *solid.Attestation,
+	attestation solid.Attestation,
 	fromBlock, insert bool,
 ) error {
 	f.Pool.AttestationsPool.Insert(attestation.Signature(), attestation)
@@ -358,12 +358,6 @@ func (f *ForkChoiceStorageMock) AddPreverifiedBlobSidecar(msg *cltypes.BlobSidec
 }
 func (f *ForkChoiceStorageMock) ValidateOnAttestation(attestation *solid.Attestation) error {
 	panic("implement me")
-}
-
-func (f *ForkChoiceStorageMock) ProcessAttestingIndicies(
-	attestation *solid.Attestation,
-	attestionIndicies []uint64,
-) {
 }
 
 func (f *ForkChoiceStorageMock) IsRootOptimistic(root common.Hash) bool {

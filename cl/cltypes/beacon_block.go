@@ -210,7 +210,7 @@ type BeaconBody struct {
 	// A list of slashing events for validators who included invalid attestations in the chain
 	AttesterSlashings *solid.ListSSZ[*AttesterSlashing] `json:"attester_slashings"`
 	// A list of attestations included in the block
-	Attestations *solid.ListSSZ[*solid.Attestation] `json:"attestations"`
+	Attestations *solid.ListSSZ[solid.Attestation] `json:"attestations"`
 	// A list of deposits made to the Ethereum 1.0 chain
 	Deposits *solid.ListSSZ[*Deposit] `json:"deposits"`
 	// A list of validators who have voluntarily exited the beacon chain
@@ -235,7 +235,7 @@ func NewBeaconBody(beaconCfg *clparams.BeaconChainConfig) *BeaconBody {
 		Eth1Data:           &Eth1Data{},
 		ProposerSlashings:  solid.NewStaticListSSZ[*ProposerSlashing](MaxProposerSlashings, 416),
 		AttesterSlashings:  solid.NewDynamicListSSZ[*AttesterSlashing](MaxAttesterSlashings),
-		Attestations:       solid.NewDynamicListSSZ[*solid.Attestation](MaxAttestations),
+		Attestations:       solid.NewDynamicListSSZ[solid.Attestation](MaxAttestations),
 		Deposits:           solid.NewStaticListSSZ[*Deposit](MaxDeposits, 1240),
 		VoluntaryExits:     solid.NewStaticListSSZ[*SignedVoluntaryExit](MaxVoluntaryExits, 112),
 		ExecutionPayload:   NewEth1Block(clparams.Phase0Version, beaconCfg),
@@ -268,7 +268,7 @@ func (b *BeaconBody) EncodingSizeSSZ() (size int) {
 		b.AttesterSlashings = solid.NewDynamicListSSZ[*AttesterSlashing](MaxAttesterSlashings)
 	}
 	if b.Attestations == nil {
-		b.Attestations = solid.NewDynamicListSSZ[*solid.Attestation](MaxAttestations)
+		b.Attestations = solid.NewDynamicListSSZ[solid.Attestation](MaxAttestations)
 	}
 	if b.Deposits == nil {
 		b.Deposits = solid.NewStaticListSSZ[*Deposit](MaxDeposits, 1240)
@@ -387,7 +387,7 @@ func (b *BeaconBody) UnmarshalJSON(buf []byte) error {
 		Graffiti           libcommon.Hash                              `json:"graffiti"`
 		ProposerSlashings  *solid.ListSSZ[*ProposerSlashing]           `json:"proposer_slashings"`
 		AttesterSlashings  *solid.ListSSZ[*AttesterSlashing]           `json:"attester_slashings"`
-		Attestations       *solid.ListSSZ[*solid.Attestation]          `json:"attestations"`
+		Attestations       *solid.ListSSZ[solid.Attestation]           `json:"attestations"`
 		Deposits           *solid.ListSSZ[*Deposit]                    `json:"deposits"`
 		VoluntaryExits     *solid.ListSSZ[*SignedVoluntaryExit]        `json:"voluntary_exits"`
 		SyncAggregate      *SyncAggregate                              `json:"sync_aggregate,omitempty"`
@@ -397,7 +397,7 @@ func (b *BeaconBody) UnmarshalJSON(buf []byte) error {
 	}
 	tmp.ProposerSlashings = solid.NewStaticListSSZ[*ProposerSlashing](MaxProposerSlashings, 416)
 	tmp.AttesterSlashings = solid.NewDynamicListSSZ[*AttesterSlashing](MaxAttesterSlashings)
-	tmp.Attestations = solid.NewDynamicListSSZ[*solid.Attestation](MaxAttestations)
+	tmp.Attestations = solid.NewDynamicListSSZ[solid.Attestation](MaxAttestations)
 	tmp.Deposits = solid.NewStaticListSSZ[*Deposit](MaxDeposits, 1240)
 	tmp.VoluntaryExits = solid.NewStaticListSSZ[*SignedVoluntaryExit](MaxVoluntaryExits, 112)
 	tmp.ExecutionChanges = solid.NewStaticListSSZ[*SignedBLSToExecutionChange](MaxExecutionChanges, 172)
@@ -446,7 +446,7 @@ func (b *BeaconBody) GetAttesterSlashings() *solid.ListSSZ[*AttesterSlashing] {
 	return b.AttesterSlashings
 }
 
-func (b *BeaconBody) GetAttestations() *solid.ListSSZ[*solid.Attestation] {
+func (b *BeaconBody) GetAttestations() *solid.ListSSZ[solid.Attestation] {
 	return b.Attestations
 }
 

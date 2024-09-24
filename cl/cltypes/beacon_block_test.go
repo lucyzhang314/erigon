@@ -45,7 +45,7 @@ func TestBeaconBody(t *testing.T) {
 	graffiti := [32]byte{4, 5, 6}
 	proposerSlashings := solid.NewStaticListSSZ[*ProposerSlashing](MaxProposerSlashings, 416)
 	attesterSlashings := solid.NewDynamicListSSZ[*AttesterSlashing](MaxAttesterSlashings)
-	attestations := solid.NewDynamicListSSZ[*solid.Attestation](MaxAttestations)
+	attestations := solid.NewDynamicListSSZ[solid.Attestation](MaxAttestations)
 	deposits := solid.NewStaticListSSZ[*Deposit](MaxDeposits, 1240)
 	voluntaryExits := solid.NewStaticListSSZ[*SignedVoluntaryExit](MaxVoluntaryExits, 112)
 	syncAggregate := &SyncAggregate{}

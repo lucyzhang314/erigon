@@ -31,7 +31,7 @@ var (
 
 // OnAttestation processes incoming attestations.
 func (f *ForkChoiceStore) OnAttestation(
-	attestation *solid.Attestation,
+	attestation solid.Attestation,
 	fromBlock bool,
 	insert bool,
 ) error {
@@ -81,7 +81,7 @@ func (f *ForkChoiceStore) OnAttestation(
 }
 
 func (f *ForkChoiceStore) ProcessAttestingIndicies(
-	attestation *solid.Attestation,
+	attestation solid.Attestation,
 	attestionIndicies []uint64,
 ) {
 	f.mu.Lock()
@@ -91,7 +91,7 @@ func (f *ForkChoiceStore) ProcessAttestingIndicies(
 
 func (f *ForkChoiceStore) verifyAttestationWithCheckpointState(
 	target solid.Checkpoint,
-	attestation *solid.Attestation,
+	attestation solid.Attestation,
 	fromBlock bool,
 ) (attestationIndicies []uint64, err error) {
 	data := attestation.AttestantionData()
@@ -130,7 +130,7 @@ func (f *ForkChoiceStore) verifyAttestationWithCheckpointState(
 
 func (f *ForkChoiceStore) verifyAttestationWithState(
 	s *state.CachingBeaconState,
-	attestation *solid.Attestation,
+	attestation solid.Attestation,
 	fromBlock bool,
 ) (attestationIndicies []uint64, err error) {
 	data := attestation.AttestantionData()
@@ -203,7 +203,7 @@ func (f *ForkChoiceStore) setUnequivocating(validatorIndex uint64) {
 }
 
 func (f *ForkChoiceStore) processAttestingIndicies(
-	attestation *solid.Attestation,
+	attestation solid.Attestation,
 	indicies []uint64,
 ) {
 	beaconBlockRoot := attestation.AttestantionData().BeaconBlockRoot()
@@ -223,7 +223,7 @@ func (f *ForkChoiceStore) processAttestingIndicies(
 	}
 }
 
-func (f *ForkChoiceStore) ValidateOnAttestation(attestation *solid.Attestation) error {
+func (f *ForkChoiceStore) ValidateOnAttestation(attestation solid.Attestation) error {
 	target := attestation.AttestantionData().Target()
 
 	if target.Epoch() != f.computeEpochAtSlot(attestation.AttestantionData().Slot()) {
@@ -250,7 +250,7 @@ func (f *ForkChoiceStore) ValidateOnAttestation(attestation *solid.Attestation) 
 }
 
 func (f *ForkChoiceStore) validateTargetEpochAgainstCurrentTime(
-	attestation *solid.Attestation,
+	attestation solid.Attestation,
 ) error {
 	target := attestation.AttestantionData().Target()
 	// Attestations must be from the current or previous epoch

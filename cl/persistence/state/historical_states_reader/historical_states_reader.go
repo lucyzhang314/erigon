@@ -680,7 +680,7 @@ func (r *HistoricalStatesReader) readPendingEpochs(tx kv.Tx, slot uint64) (*soli
 		isPreviousPendingAttestations := currentEpoch == prevEpoch
 
 		// Read the participation flags
-		block.Block.Body.Attestations.Range(func(index int, attestation *solid.Attestation, length int) bool {
+		block.Block.Body.Attestations.Range(func(index int, attestation solid.Attestation, length int) bool {
 			data := attestation.AttestantionData()
 			isCurrentEpoch := data.Target().Epoch() == currentEpoch
 			// skip if it is too far behind
@@ -761,7 +761,7 @@ func (r *HistoricalStatesReader) ReadPartecipations(tx kv.Tx, slot uint64) (*sol
 		currentEpoch := i / r.cfg.SlotsPerEpoch
 
 		// Read the participation flags
-		block.Block.Body.Attestations.Range(func(index int, attestation *solid.Attestation, length int) bool {
+		block.Block.Body.Attestations.Range(func(index int, attestation solid.Attestation, length int) bool {
 			data := attestation.AttestantionData()
 			isCurrentEpoch := data.Target().Epoch() == currentEpoch
 			var activeIndicies []uint64

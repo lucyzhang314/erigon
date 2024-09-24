@@ -52,11 +52,11 @@ func operationAttestationHandler(t *testing.T, root fs.FS, c spectest.TestCase) 
 	if err != nil && !expectedError {
 		return err
 	}
-	att := &solid.Attestation{}
+	att := &solid.AttestationDeneb{}
 	if err := spectest.ReadSszOld(root, att, c.Version(), attestationFileName); err != nil {
 		return err
 	}
-	if err := c.Machine.ProcessAttestations(preState, solid.NewDynamicListSSZFromList([]*solid.Attestation{att}, 128)); err != nil {
+	if err := c.Machine.ProcessAttestations(preState, solid.NewDynamicListSSZFromList([]solid.Attestation{att}, 128)); err != nil {
 		if expectedError {
 			return nil
 		}

@@ -136,7 +136,7 @@ func (c *CommitteeSubscribeMgmt) AddAttestationSubscription(ctx context.Context,
 	return nil
 }
 
-func (c *CommitteeSubscribeMgmt) AggregateAttestation(att *solid.Attestation) error {
+func (c *CommitteeSubscribeMgmt) AggregateAttestation(att solid.Attestation) error {
 	committeeIndex := att.AttestantionData().CommitteeIndex()
 	c.validatorSubsMutex.RLock()
 	defer c.validatorSubsMutex.RUnlock()
@@ -149,7 +149,7 @@ func (c *CommitteeSubscribeMgmt) AggregateAttestation(att *solid.Attestation) er
 	return nil
 }
 
-func (c *CommitteeSubscribeMgmt) NeedToAggregate(att *solid.Attestation) bool {
+func (c *CommitteeSubscribeMgmt) NeedToAggregate(att solid.Attestation) bool {
 	var (
 		committeeIndex = att.AttestantionData().CommitteeIndex()
 	)

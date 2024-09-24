@@ -29,9 +29,9 @@ import (
  * to be aggregated and the BLS signature of the attestation.
  */
 type AggregateAndProof struct {
-	AggregatorIndex uint64             `json:"aggregator_index,string"`
-	Aggregate       *solid.Attestation `json:"aggregate"`
-	SelectionProof  libcommon.Bytes96  `json:"selection_proof"`
+	AggregatorIndex uint64            `json:"aggregator_index,string"`
+	Aggregate       solid.Attestation `json:"aggregate"`
+	SelectionProof  libcommon.Bytes96 `json:"selection_proof"`
 }
 
 func (a *AggregateAndProof) EncodeSSZ(dst []byte) ([]byte, error) {
@@ -43,7 +43,7 @@ func (a *AggregateAndProof) Static() bool {
 }
 
 func (a *AggregateAndProof) DecodeSSZ(buf []byte, version int) error {
-	a.Aggregate = new(solid.Attestation)
+	a.Aggregate = solid.Attestation{}
 	return ssz2.UnmarshalSSZ(buf, version, &a.AggregatorIndex, a.Aggregate, a.SelectionProof[:])
 }
 

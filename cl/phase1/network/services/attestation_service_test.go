@@ -93,7 +93,7 @@ func (t *attestationTestSuite) TestAttestationProcessMessage() {
 	type args struct {
 		ctx    context.Context
 		subnet *uint64
-		msg    *solid.Attestation
+		msg    solid.Attestation
 	}
 	tests := []struct {
 		name string

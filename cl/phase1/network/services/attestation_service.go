@@ -63,7 +63,7 @@ type attestationService struct {
 
 // AttestationWithGossipData type represents attestation with the gossip data where it's coming from.
 type AttestationWithGossipData struct {
-	Attestation *solid.Attestation
+	Attestation solid.Attestation
 	GossipData  *sentinel.GossipData
 	// ImmediateProcess indicates whether the attestation should be processed immediately or able to be scheduled for later processing.
 	ImmediateProcess bool

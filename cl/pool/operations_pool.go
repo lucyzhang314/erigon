@@ -43,7 +43,7 @@ func ComputeKeyForAttesterSlashing(slashing *cltypes.AttesterSlashing) libcommon
 
 // OperationsPool is the collection of all gossip-collectable operations.
 type OperationsPool struct {
-	AttestationsPool          *OperationPool[libcommon.Bytes96, *solid.Attestation]
+	AttestationsPool          *OperationPool[libcommon.Bytes96, solid.Attestation]
 	AttesterSlashingsPool     *OperationPool[libcommon.Bytes96, *cltypes.AttesterSlashing]
 	ProposerSlashingsPool     *OperationPool[libcommon.Bytes96, *cltypes.ProposerSlashing]
 	BLSToExecutionChangesPool *OperationPool[libcommon.Bytes96, *cltypes.SignedBLSToExecutionChange]
@@ -52,7 +52,7 @@ type OperationsPool struct {
 
 func NewOperationsPool(beaconCfg *clparams.BeaconChainConfig) OperationsPool {
 	return OperationsPool{
-		AttestationsPool:          NewOperationPool[libcommon.Bytes96, *solid.Attestation](operationsPerPool, "attestationsPool"),
+		AttestationsPool:          NewOperationPool[libcommon.Bytes96, solid.Attestation](operationsPerPool, "attestationsPool"),
 		AttesterSlashingsPool:     NewOperationPool[libcommon.Bytes96, *cltypes.AttesterSlashing](operationsPerPool, "attesterSlashingsPool"),
 		ProposerSlashingsPool:     NewOperationPool[libcommon.Bytes96, *cltypes.ProposerSlashing](operationsPerPool, "proposerSlashingsPool"),
 		BLSToExecutionChangesPool: NewOperationPool[libcommon.Bytes96, *cltypes.SignedBLSToExecutionChange](operationsPerPool, "blsExecutionChangesPool"),

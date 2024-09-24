@@ -1052,15 +1052,15 @@ func (a *ApiHandler) storeBlockAndBlobs(
 }
 
 type attestationCandidate struct {
-	attestation *solid.Attestation
+	attestation solid.Attestation
 	reward      uint64
 }
 
 func (a *ApiHandler) findBestAttestationsForBlockProduction(
 	s abstract.BeaconState,
-) *solid.ListSSZ[*solid.Attestation] {
+) *solid.ListSSZ[solid.Attestation] {
 	// Group attestations by their data root
-	hashToAtts := make(map[libcommon.Hash][]*solid.Attestation)
+	hashToAtts := make(map[libcommon.Hash][]solid.Attestation)
 	for _, candidate := range a.operationsPool.AttestationsPool.Raw() {
 		if err := eth2.IsAttestationApplicable(s, candidate); err != nil {
 			continue // attestation not applicable skip
@@ -1071,7 +1071,7 @@ func (a *ApiHandler) findBestAttestationsForBlockProduction(
 		}
 
 		if _, ok := hashToAtts[dataRoot]; !ok {
-			hashToAtts[dataRoot] = []*solid.Attestation{}
+			hashToAtts[dataRoot] = []solid.Attestation{}
 		}
 
 		// try to merge the attestation with the existing ones
@@ -1125,7 +1125,7 @@ func (a *ApiHandler) findBestAttestationsForBlockProduction(
 	sort.Slice(attestationCandidates, func(i, j int) bool {
 		return attestationCandidates[i].reward > attestationCandidates[j].reward
 	})
-	ret := solid.NewDynamicListSSZ[*solid.Attestation](int(a.beaconChainCfg.MaxAttestations))
+	ret := solid.NewDynamicListSSZ[solid.Attestation](int(a.beaconChainCfg.MaxAttestations))
 	for _, candidate := range attestationCandidates {
 		ret.Append(candidate.attestation)
 		if ret.Len() >= int(a.beaconChainCfg.MaxAttestations) {
@@ -1138,7 +1138,7 @@ func (a *ApiHandler) findBestAttestationsForBlockProduction(
 // computeAttestationReward computes the reward for a specific attestation.
 func computeAttestationReward(
 	s abstract.BeaconState,
-	attestation *solid.Attestation) (uint64, error) {
+	attestation solid.Attestation) (uint64, error) {
 
 	baseRewardPerIncrement := s.BaseRewardPerIncrement()
 	data := attestation.AttestantionData()

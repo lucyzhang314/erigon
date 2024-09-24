@@ -23,7 +23,7 @@ type GenericBeaconBody interface {
 
 	GetProposerSlashings() *solid.ListSSZ[*ProposerSlashing]
 	GetAttesterSlashings() *solid.ListSSZ[*AttesterSlashing]
-	GetAttestations() *solid.ListSSZ[*solid.Attestation]
+	GetAttestations() *solid.ListSSZ[solid.Attestation]
 	GetDeposits() *solid.ListSSZ[*Deposit]
 	GetVoluntaryExits() *solid.ListSSZ[*SignedVoluntaryExit]
 	GetBlobKzgCommitments() *solid.ListSSZ[*KZGCommitment]
