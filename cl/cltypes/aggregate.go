@@ -19,6 +19,7 @@ package cltypes
 import (
 	libcommon "github.com/erigontech/erigon-lib/common"
 	sentinel "github.com/erigontech/erigon-lib/gointerfaces/sentinelproto"
+	"github.com/erigontech/erigon/cl/clparams"
 	"github.com/erigontech/erigon/cl/cltypes/solid"
 	"github.com/erigontech/erigon/cl/merkle_tree"
 	ssz2 "github.com/erigontech/erigon/cl/ssz"
@@ -43,7 +44,11 @@ func (a *AggregateAndProof) Static() bool {
 }
 
 func (a *AggregateAndProof) DecodeSSZ(buf []byte, version int) error {
-	a.Aggregate = solid.Attestation{}
+	if version <= int(clparams.DenebVersion) {
+		a.Aggregate = new(solid.AttestationDeneb)
+	} else {
+		a.Aggregate = new(solid.AttestationElectra)
+	}
 	return ssz2.UnmarshalSSZ(buf, version, &a.AggregatorIndex, a.Aggregate, a.SelectionProof[:])
 }
 

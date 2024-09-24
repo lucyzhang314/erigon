@@ -76,10 +76,28 @@ func (a *ApiHandler) GetEthV1BeaconPoolAttestations(w http.ResponseWriter, r *ht
 }
 
 func (a *ApiHandler) PostEthV1BeaconPoolAttestations(w http.ResponseWriter, r *http.Request) {
-	req := []*solid.AttestationDeneb{}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		beaconhttp.NewEndpointError(http.StatusBadRequest, err).WriteTo(w)
-		return
+	var (
+		req = []solid.Attestation{}
+	)
+	curEpoch := a.ethClock.GetCurrentEpoch()
+	if curEpoch < a.beaconChainCfg.ElectraForkEpoch {
+		atts := []*solid.AttestationDeneb{}
+		if err := json.NewDecoder(r.Body).Decode(&atts); err != nil {
+			beaconhttp.NewEndpointError(http.StatusBadRequest, err).WriteTo(w)
+			return
+		}
+		for _, att := range atts {
+			req = append(req, att)
+		}
+	} else {
+		atts := []*solid.AttestationElectra{}
+		if err := json.NewDecoder(r.Body).Decode(&atts); err != nil {
+			beaconhttp.NewEndpointError(http.StatusBadRequest, err).WriteTo(w)
+			return
+		}
+		for _, att := range atts {
+			req = append(req, att)
+		}
 	}
 
 	headState := a.syncedData.HeadState()
