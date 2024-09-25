@@ -417,15 +417,32 @@ func (s *EngineServer) getQuickPayloadStatusIfPossible(ctx context.Context, bloc
 			return &engine_types.PayloadStatus{Status: engine_types.ValidStatus, LatestValidHash: &blockHash}, nil
 		}
 
-		if parent == nil && s.hd.PosStatus() == headerdownload.Syncing {
-			s.logger.Debug(fmt.Sprintf("[%s] Downloading some other PoS blocks", prefix), "hash", blockHash)
+		if shouldWait, _ := waitForStuff(func() (bool, error) {
+			return parent == nil && s.hd.PosStatus() == headerdownload.Syncing, nil
+		}); shouldWait {
+			s.logger.Info(fmt.Sprintf("[%s] Downloading some other PoS blocks", prefix), "hash", blockHash)
 			return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
 		}
+
+		// if parent == nil && s.hd.PosStatus() == headerdownload.Syncing {
+		// 	s.logger.Debug(fmt.Sprintf("[%s] Downloading some other PoS blocks", prefix), "hash", blockHash)
+		// 	return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
+		// }
 	} else {
-		if header == nil && s.hd.PosStatus() == headerdownload.Syncing {
-			s.logger.Debug(fmt.Sprintf("[%s] Downloading some other PoS stuff", prefix), "hash", blockHash)
+		if shouldWait, _ := waitForStuff(func() (bool, error) {
+			return header == nil && s.hd.PosStatus() == headerdownload.Syncing, nil
+		}); shouldWait {
+			s.logger.Info(fmt.Sprintf("[%s] Downloading some other PoS stuff", prefix), "hash", blockHash)
 			return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
 		}
+
+		// if header == nil && s.hd.PosStatus() == headerdownload.Syncing {
+		// 	s.logger.Debug(fmt.Sprintf("[%s] Downloading some other PoS stuff", prefix), "hash", blockHash)
+		// 	time.Sleep(200*time.Millisecond)
+		// 	if header == nil && s.hd.PosStatus() == headerdownload.Syncing {
+		// 		return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
+		// 	}
+		// }
 
 		// We add the extra restriction blockHash != headHash for the FCU case of canonicalHash == blockHash
 		// because otherwise (when FCU points to the head) we want go to stage headers
@@ -434,11 +451,16 @@ func (s *EngineServer) getQuickPayloadStatusIfPossible(ctx context.Context, bloc
 			return &engine_types.PayloadStatus{Status: engine_types.ValidStatus, LatestValidHash: &blockHash}, nil
 		}
 	}
-	executionReady, err := s.chainRW.Ready(ctx)
+
+	waitForExecutionReady, err := waitForStuff(func() (bool, error) { 
+		isReady, err := s.chainRW.Ready(ctx)
+		return !isReady, err
+	})
 	if err != nil {
 		return nil, err
 	}
-	if !executionReady {
+	if waitForExecutionReady {
+		s.logger.Info(fmt.Sprintf("[%s] Execution not ready yet", prefix), "hash", blockHash)
 		return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
 	}
 
@@ -577,13 +599,36 @@ func (s *EngineServer) forkchoiceUpdated(ctx context.Context, forkchoiceState *e
 		req.ParentBeaconBlockRoot = gointerfaces.ConvertHashToH256(*payloadAttributes.ParentBeaconBlockRoot)
 	}
 
-	resp, err := s.executionService.AssembleBlock(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.Busy {
+	var resp *execution.AssembleBlockResponse
+	// var payloadId *hexutility.Bytes
+
+	execBusy, err := waitForStuff(func() (bool, error) {
+		resp, err = s.executionService.AssembleBlock(ctx, req)
+		if err != nil {
+			return true, err
+		}
+		return resp.Busy, nil
+	})
+
+	// busy := false
+	// for i := 0; i < 100; i++ {
+	// 	resp, err = s.executionService.AssembleBlock(ctx, req)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	if !resp.Busy {
+	// 		break
+	// 	} else {
+	// 		busy = true
+	// 	}
+	// 	time.Sleep(10 * time.Millisecond)
+	// }
+	// if busy {
+	if execBusy {
+		s.logger.Info(fmt.Sprintf("[%s] AssembleBlock service busy", "forkchoiceUpdated"), "parentHash", req.ParentHash)
 		return &engine_types.ForkChoiceUpdatedResponse{PayloadStatus: &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, PayloadId: nil}, nil
 	}
+
 	return &engine_types.ForkChoiceUpdatedResponse{
 		PayloadStatus: &engine_types.PayloadStatus{
 			Status:          engine_types.ValidStatus,
@@ -863,6 +908,7 @@ func (e *EngineServer) HandleNewPayload(
 		}
 
 		if !e.blockDownloader.StartDownloading(ctx, 0, header.ParentHash, block) {
+			e.logger.Info(fmt.Sprintf("[%s] BlockDownloader could not start download", logPrefix), "parentHash", header.ParentHash)
 			return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
 		}
 
@@ -878,6 +924,7 @@ func (e *EngineServer) HandleNewPayload(
 				}
 			}
 			if !success {
+				e.logger.Warn(fmt.Sprintf("[%s] Block downloader didn't sync yet", logPrefix), "parentHash", header.ParentHash)
 				return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
 			}
 
@@ -887,12 +934,13 @@ func (e *EngineServer) HandleNewPayload(
 			}
 
 			if status == execution.ExecutionStatus_Busy || status == execution.ExecutionStatus_TooFarAway {
-				e.logger.Debug(fmt.Sprintf("[%s] New payload: Client is still syncing", logPrefix))
+				e.logger.Warn(fmt.Sprintf("[%s] New payload: Client is still syncing", logPrefix))
 				return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
 			} else {
 				return &engine_types.PayloadStatus{Status: engine_types.ValidStatus, LatestValidHash: &latestValidHash}, nil
 			}
 		} else {
+			e.logger.Warn(fmt.Sprintf("[%s] Current header number not found in the Database", logPrefix))
 			return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
 		}
 	}
@@ -963,6 +1011,8 @@ func (e *EngineServer) HandlesForkChoice(
 		if !e.test {
 			e.blockDownloader.StartDownloading(ctx, requestId, headerHash, nil)
 		}
+
+		e.logger.Warn(fmt.Sprintf("[%s] HeaderNumber for the given header hash is nil, start downloading %x", logPrefix, headerHash))
 		return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
 	}
 
@@ -973,7 +1023,7 @@ func (e *EngineServer) HandlesForkChoice(
 		if !e.test {
 			e.blockDownloader.StartDownloading(ctx, requestId, headerHash, nil)
 		}
-
+		e.logger.Warn(fmt.Sprintf("[%s] Header is nil in database, start downloading %x", logPrefix, headerHash))
 		return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
 	}
 
@@ -986,6 +1036,7 @@ func (e *EngineServer) HandlesForkChoice(
 		return nil, &engine_helpers.InvalidForkchoiceStateErr
 	}
 	if status == execution.ExecutionStatus_Busy {
+		e.logger.Warn(fmt.Sprintf("[%s] Header is nil in database, start downloading %x", logPrefix, headerHash))
 		return &engine_types.PayloadStatus{Status: engine_types.SyncingStatus}, nil
 	}
 	if status == execution.ExecutionStatus_BadBlock {
@@ -1000,4 +1051,19 @@ func (e *EngineServer) HandlesForkChoice(
 		payloadStatus.ValidationError = engine_types.NewStringifiedErrorFromString(*validationErr)
 	}
 	return payloadStatus, nil
+}
+
+func waitForStuff(waitCondnF func() (bool, error)) (bool, error) {
+	shouldWait, err := waitCondnF()
+	if err != nil || !shouldWait {
+		return shouldWait, err
+	}
+	for i := 0; i < 1000; i++ {
+		time.Sleep(10 * time.Millisecond)
+		shouldWait, err = waitCondnF()
+		if err != nil || !shouldWait {
+			return shouldWait, err
+		}
+	}
+	return true, nil
 }
