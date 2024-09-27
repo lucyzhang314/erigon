@@ -1284,6 +1284,7 @@ func allSnapshots(ctx context.Context, db kv.RoDB, logger log.Logger) (*freezebl
 		runtime.GC()
 		dbg.ReadMemStats(&m)
 		logger.Info("Mem after", "alloc", libcommon.ByteCount(m.Alloc), "sys", libcommon.ByteCount(m.Sys))
+		os.Exit(1)
 
 		_allBorSnapshotsSingleton = freezeblocks.NewBorRoSnapshots(snapCfg, dirs.Snap, 0, logger)
 		var err error
