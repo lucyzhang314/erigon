@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -1274,20 +1273,7 @@ func allSnapshots(ctx context.Context, db kv.RoDB, logger log.Logger) (*freezebl
 		chainConfig := fromdb.ChainConfig(db)
 		snapCfg := ethconfig.NewSnapCfg(true, true, true, chainConfig.ChainName)
 
-		var m runtime.MemStats
-
-		runtime.GC()
-		dbg.ReadMemStats(&m)
-		logger.Info("Mem before", "alloc", libcommon.ByteCount(m.Alloc), "sys", libcommon.ByteCount(m.Sys))
-
-		c := freezeblocks.NewRoSnapshotsT(snapCfg, dirs.Snap, 0, logger)
-		c.OptimisticalyReopenFolder()
-		runtime.GC()
-		dbg.ReadMemStats(&m)
-		logger.Info("Mem after", "alloc", libcommon.ByteCount(m.Alloc), "sys", libcommon.ByteCount(m.Sys))
-		c.Close()
-		os.Exit(1)
-
+		_allSnapshotsSingleton = freezeblocks.NewRoSnapshots(snapCfg, dirs.Snap, 0, logger)
 		_allBorSnapshotsSingleton = freezeblocks.NewBorRoSnapshots(snapCfg, dirs.Snap, 0, logger)
 		var err error
 		blockReader := freezeblocks.NewBlockReader(_allSnapshotsSingleton, _allBorSnapshotsSingleton)

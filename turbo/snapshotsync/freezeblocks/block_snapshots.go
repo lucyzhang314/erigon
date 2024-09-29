@@ -57,7 +57,6 @@ import (
 	"github.com/erigontech/erigon/core/rawdb"
 	"github.com/erigontech/erigon/core/rawdb/blockio"
 	coresnaptype "github.com/erigontech/erigon/core/snaptype"
-	snaptype2 "github.com/erigontech/erigon/core/snaptype"
 	"github.com/erigontech/erigon/core/types"
 	"github.com/erigontech/erigon/eth/ethconfig"
 	"github.com/erigontech/erigon/eth/ethconfig/estimate"
@@ -489,13 +488,6 @@ func NewRoSnapshots(cfg ethconfig.BlocksFreezing, snapDir string, segmentsMin ui
 	return newRoSnapshots(cfg, snapDir, coresnaptype.BlockSnapshotTypes, segmentsMin, logger)
 }
 
-func NewRoSnapshotsH(cfg ethconfig.BlocksFreezing, snapDir string, segmentsMin uint64, logger log.Logger) *RoSnapshots {
-	return newRoSnapshots(cfg, snapDir, []snaptype.Type{snaptype2.Headers}, segmentsMin, logger)
-}
-func NewRoSnapshotsT(cfg ethconfig.BlocksFreezing, snapDir string, segmentsMin uint64, logger log.Logger) *RoSnapshots {
-	return newRoSnapshots(cfg, snapDir, []snaptype.Type{snaptype2.Transactions}, segmentsMin, logger)
-}
-
 func newRoSnapshots(cfg ethconfig.BlocksFreezing, snapDir string, types []snaptype.Type, segmentsMin uint64, logger log.Logger) *RoSnapshots {
 	var segs btree.Map[snaptype.Enum, *segments]
 	for _, snapType := range types {
@@ -815,12 +807,6 @@ func (s *RoSnapshots) rebuildSegments(fileNames []string, open bool, optimistic 
 				}
 			}
 		}
-
-		var m runtime.MemStats
-		runtime.GC()
-		dbg.ReadMemStats(&m)
-
-		log.Info("mm", "n", f.Name(), "w", sn.Decompressor.DictWords(), "d_sz", sn.Decompressor.SerializedDictSize(), "alloc", common2.ByteCount(m.Alloc), "sys", common2.ByteCount(m.Sys))
 
 		if !exists {
 			// it's possible to iterate over .seg file even if you don't have index
