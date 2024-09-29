@@ -904,13 +904,16 @@ func doMeta(cliCtx *cli.Context) error {
 	}
 	fname := args.First()
 	if strings.Contains(fname, ".seg") || strings.Contains(fname, ".kv") || strings.Contains(fname, ".v") || strings.Contains(fname, ".ef") {
+		runtime.GC()
+		var m runtime.MemStats
+		dbg.ReadMemStats(&m)
+		log.Info("meta before", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 		src, err := seg.NewDecompressor(fname)
 		if err != nil {
 			return err
 		}
 		defer src.Close()
 		runtime.GC()
-		var m runtime.MemStats
 		dbg.ReadMemStats(&m)
 		log.Info("meta", "count", src.Count(), "size", datasize.ByteSize(src.Size()).HumanReadable(), "serialized_dict", datasize.ByteSize(src.SerializedDictSize()).HumanReadable(), "dict_words", src.DictWords(), "f", src.FileName(), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	} else if strings.Contains(fname, ".bt") {
