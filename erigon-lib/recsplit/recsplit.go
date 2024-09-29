@@ -408,7 +408,7 @@ func (rs *RecSplit) recsplitCurrentBucket() error {
 		for i, key := range rs.currentBucket[1:] {
 			if key == rs.currentBucket[i] {
 				rs.collision = true
-				return fmt.Errorf("%w: %x", ErrCollision, key)
+				return fmt.Errorf("%w: %x, %s", ErrCollision, key, rs.indexFileName)
 			}
 		}
 		bitPos := rs.gr.bitCount
