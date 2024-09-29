@@ -1279,12 +1279,6 @@ func allSnapshots(ctx context.Context, db kv.RoDB, logger log.Logger) (*freezebl
 		runtime.GC()
 		dbg.ReadMemStats(&m)
 		logger.Info("Mem before", "alloc", libcommon.ByteCount(m.Alloc), "sys", libcommon.ByteCount(m.Sys))
-		a := freezeblocks.NewRoSnapshotsH(snapCfg, dirs.Snap, 0, logger)
-		a.OptimisticalyReopenFolder()
-		runtime.GC()
-		dbg.ReadMemStats(&m)
-		logger.Info("Mem after", "alloc", libcommon.ByteCount(m.Alloc), "sys", libcommon.ByteCount(m.Sys))
-		a.Close()
 
 		c := freezeblocks.NewRoSnapshotsT(snapCfg, dirs.Snap, 0, logger)
 		c.OptimisticalyReopenFolder()
