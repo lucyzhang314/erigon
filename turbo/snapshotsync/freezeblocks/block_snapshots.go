@@ -819,7 +819,8 @@ func (s *RoSnapshots) rebuildSegments(fileNames []string, open bool, optimistic 
 		var m runtime.MemStats
 		runtime.GC()
 		dbg.ReadMemStats(&m)
-		log.Info("mm", "n", f.Name(), "alloc", common2.ByteCount(m.Alloc), "sys", common2.ByteCount(m.Sys))
+
+		log.Info("mm", "n", f.Name(), "w", sn.Decompressor.DictWords(), "d_sz", sn.Decompressor.SerializedDictSize(), "alloc", common2.ByteCount(m.Alloc), "sys", common2.ByteCount(m.Sys))
 
 		if !exists {
 			// it's possible to iterate over .seg file even if you don't have index
