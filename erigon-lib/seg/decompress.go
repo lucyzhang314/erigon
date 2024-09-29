@@ -101,7 +101,7 @@ func (pt *patternTable) condensedTableSearch(code uint16) *codeword {
 type posTable struct {
 	pos    []uint64
 	lens   []byte
-	ptrs   []*posTable
+	ptrs   []posTable
 	bitLen int
 }
 
@@ -124,7 +124,7 @@ type Decompressor struct {
 	f               *os.File
 	mmapHandle2     *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
 	dict            *patternTable
-	posDict         *posTable
+	posDict         posTable
 	mmapHandle1     []byte // mmap handle for unix (this is used to close mmap)
 	data            []byte // slice of correct size for the decompressor to work with
 	wordsStart      uint64 // Offset of whether the superstrings actually start
@@ -329,13 +329,13 @@ func NewDecompressor(compressedFilePath string) (*Decompressor, error) {
 		}
 		//fmt.Printf("pos maxDepth=%d\n", tree.maxDepth)
 		tableSize := 1 << bitLen
-		d.posDict = &posTable{
+		d.posDict = posTable{
 			bitLen: bitLen,
 			pos:    make([]uint64, tableSize),
 			lens:   make([]byte, tableSize),
-			ptrs:   make([]*posTable, tableSize),
+			ptrs:   make([]posTable, tableSize),
 		}
-		if _, err = buildPosTable(posDepths, poss, d.posDict, 0, 0, 0, posMaxDepth); err != nil {
+		if _, err = buildPosTable(posDepths, poss, &d.posDict, 0, 0, 0, posMaxDepth); err != nil {
 			return nil, &ErrCompressedFileCorrupted{FileName: fName, Reason: err.Error()}
 		}
 	}
@@ -399,7 +399,7 @@ func buildPosTable(depths []uint64, poss []uint64, table *posTable, code uint16,
 		if table.bitLen == bits {
 			table.pos[code] = p
 			table.lens[code] = byte(bits)
-			table.ptrs[code] = nil
+			//table.ptrs[code] = nil
 		} else {
 			codeStep := uint16(1) << bits
 			codeFrom := code
@@ -407,7 +407,7 @@ func buildPosTable(depths []uint64, poss []uint64, table *posTable, code uint16,
 			for c := codeFrom; c < codeTo; c += codeStep {
 				table.pos[c] = p
 				table.lens[c] = byte(bits)
-				table.ptrs[c] = nil
+				//table.ptrs[c] = nil
 			}
 		}
 		return 1, nil
@@ -420,16 +420,16 @@ func buildPosTable(depths []uint64, poss []uint64, table *posTable, code uint16,
 			bitLen = int(maxDepth)
 		}
 		tableSize := 1 << bitLen
-		newTable := &posTable{
+		newTable := posTable{
 			bitLen: bitLen,
 			pos:    make([]uint64, tableSize),
 			lens:   make([]byte, tableSize),
-			ptrs:   make([]*posTable, tableSize),
+			ptrs:   make([]posTable, tableSize),
 		}
 		table.pos[code] = 0
 		table.lens[code] = byte(0)
 		table.ptrs[code] = newTable
-		return buildPosTable(depths, poss, newTable, 0, 0, depth, maxDepth)
+		return buildPosTable(depths, poss, &newTable, 0, 0, depth, maxDepth)
 	}
 	if maxDepth == 0 {
 		return 0, errors.New("buildPosTable: maxDepth reached zero")
@@ -470,7 +470,7 @@ func (d *Decompressor) Close() {
 		}
 		d.f = nil
 		d.data = nil
-		d.posDict = nil
+		//d.posDict = nil
 		d.dict = nil
 	}
 }
@@ -559,7 +559,7 @@ func (d *Decompressor) EnableMadvWillNeed() *Decompressor {
 // The full state of the getter can be captured by saving dataP, and dataBit
 type Getter struct {
 	patternDict *patternTable
-	posDict     *posTable
+	posDict     posTable
 	fName       string
 	data        []byte
 	dataP       uint64
