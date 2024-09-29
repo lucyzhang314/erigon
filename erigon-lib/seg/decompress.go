@@ -276,6 +276,7 @@ func NewDecompressor(compressedFilePath string) (*Decompressor, error) {
 		if _, err = buildCondensedPatternTable(d.dict, depths, patterns, 0, 0, 0, patternMaxDepth); err != nil {
 			return nil, &ErrCompressedFileCorrupted{FileName: fName, Reason: err.Error()}
 		}
+		fmt.Printf("depths=%d, %s, \n", depths, fName)
 	}
 
 	if assert.Enable && pos != 24 {
