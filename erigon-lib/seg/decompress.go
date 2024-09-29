@@ -280,7 +280,7 @@ func NewDecompressor(compressedFilePath string) (*Decompressor, error) {
 		for i := range depths {
 			dep += depths[i]
 		}
-		fmt.Printf("depths=%d, %s, \n", depths, fName)
+		fmt.Printf("depths=%d, %s, \n", dep, fName)
 	}
 
 	if assert.Enable && pos != 24 {
