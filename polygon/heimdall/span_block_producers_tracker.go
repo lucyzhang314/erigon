@@ -191,7 +191,7 @@ func (t *spanBlockProducersTracker) Producers(ctx context.Context, blockNum uint
 	spanStartSprintNum := t.calculateSprintNumber(producerSelection.StartBlock)
 	currentSprintNum := t.calculateSprintNumber(blockNum)
 	increments := int(currentSprintNum - spanStartSprintNum)
-	for i := 0; i < increments; i++ {
+	for i := 0; i <= increments; i++ {
 		producers = valset.GetUpdatedValidatorSet(producers, producers.Validators, t.logger)
 		producers.IncrementProposerPriority(1)
 	}
