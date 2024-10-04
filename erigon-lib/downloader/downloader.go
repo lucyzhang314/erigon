@@ -351,7 +351,7 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg, logger log.Logger, verbosi
 		webDownloadInfo:     map[string]webDownloadInfo{},
 		webDownloadSessions: map[string]*RCloneSession{},
 		downloading:         map[string]*downloadInfo{},
-		webseedsDiscover:    discover,
+		webseedsDiscover:    false,
 		logPrefix:           "",
 		completedTorrents:   make(map[string]completedTorrentInfo),
 	}
@@ -912,6 +912,7 @@ func (d *Downloader) mainLoop(silent bool) error {
 			var dlist []string
 
 			for _, t := range torrents {
+
 				if _, ok := d.completedTorrents[t.Name()]; ok {
 					clist = append(clist, t.Name())
 					continue

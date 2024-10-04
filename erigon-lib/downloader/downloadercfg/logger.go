@@ -62,7 +62,7 @@ func (b adapterHandler) Handle(r lg.Record) {
 
 	switch lvl {
 	case lg.Debug:
-		str := r.String()
+		/*str := r.String()
 		skip := strings.Contains(str, "completion change") || strings.Contains(str, "hashed piece") ||
 			strings.Contains(str, "set torrent=") ||
 			strings.Contains(str, "all initial dials failed") ||
@@ -76,8 +76,8 @@ func (b adapterHandler) Handle(r lg.Record) {
 		if skip {
 			log.Trace(str, "lvl", lvl.LogString())
 			break
-		}
-		log.Debug(str)
+		}*/
+		log.Debug(r.String())
 	case lg.Info:
 		str := r.String()
 		skip := strings.Contains(str, "EOF")
