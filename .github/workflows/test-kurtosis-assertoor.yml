@@ -5,7 +5,7 @@ env:
   APP_REPO: "erigontech/erigon"
 
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
       checkout_ref:
         required: true
