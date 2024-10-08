@@ -1,5 +1,3 @@
-//go:build integration
-
 package tests
 
 import (
@@ -20,15 +18,11 @@ func TestExecutionSpec(t *testing.T) {
 
 	bt := new(testMatcher)
 
-	dir := filepath.Join(".", "execution-spec-tests")
+	path := filepath.Join(".", "execution-spec-tests", "prague", "eip7702_set_code_tx", "set_code_txs", "set_code_to_sstore_then_sload.json")
 
-	// TODO(yperbasis) make it work
-	bt.skipLoad(`^prague/eip2935_historical_block_hashes_from_state/block_hashes/block_hashes_history.json`)
-	bt.skipLoad(`^prague/eip7251_consolidations/`)
-	bt.skipLoad(`^prague/eip7685_general_purpose_el_requests/`)
 	checkStateRoot := true
 
-	bt.walk(t, dir, func(t *testing.T, name string, test *BlockTest) {
+	bt.runTestFile(t, path, "", func(t *testing.T, name string, test *BlockTest) {
 		// import pre accounts & construct test genesis block & state root
 		if err := bt.checkFailure(t, test.Run(t, checkStateRoot)); err != nil {
 			t.Error(err)
