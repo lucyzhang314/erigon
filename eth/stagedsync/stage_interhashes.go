@@ -151,9 +151,31 @@ func SpawnIntermediateHashesStage(s *StageState, u Unwinder, tx kv.RwTx, cfg Tri
 	return root, err
 }
 
+func dumpPlainStateDebug(tx kv.Tx) {
+	tx.ForEach(kv.PlainState, nil, func(k, v []byte) error {
+		if len(k) == 20 {
+			a := accounts.NewAccount()
+			if err := a.DecodeForStorage(v); err != nil {
+				panic(err)
+			}
+			fmt.Printf("XA %x, %d, %d, %d, %x\n", k, &a.Balance, a.Nonce, a.Incarnation, a.CodeHash)
+		}
+		return nil
+	})
+	tx.ForEach(kv.PlainState, nil, func(k, v []byte) error {
+		if len(k) > 20 {
+			fmt.Printf("%x, %x\n", k, v)
+		}
+		return nil
+	})
+}
+
 func RegenerateIntermediateHashes(logPrefix string, db kv.RwTx, cfg TrieCfg, expectedRootHash libcommon.Hash, ctx context.Context, logger log.Logger) (libcommon.Hash, error) {
 	logger.Info(fmt.Sprintf("[%s] Regeneration trie hashes started", logPrefix))
 	defer logger.Info(fmt.Sprintf("[%s] Regeneration ended", logPrefix))
+
+	dumpPlainStateDebug(db)
+
 	_ = db.ClearBucket(kv.TrieOfAccounts)
 	_ = db.ClearBucket(kv.TrieOfStorage)
 	clean := kv.ReadAhead(ctx, cfg.db, &atomic.Bool{}, kv.HashedAccounts, nil, math.MaxUint32)
