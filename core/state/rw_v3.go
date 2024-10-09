@@ -486,9 +486,9 @@ func (w *StateWriterV3) PrevAndDels() (map[string][]byte, map[string]*accounts.A
 }
 
 func (w *StateWriterV3) UpdateAccountData(address common.Address, original, account *accounts.Account) error {
-	if w.trace {
-		fmt.Printf("acc %x: {Balance: %d, Nonce: %d, Inc: %d, CodeHash: %x}\n", address, &account.Balance, account.Nonce, account.Incarnation, account.CodeHash)
-	}
+	//if w.trace {
+	fmt.Printf("acc %x: {Balance: %d, Nonce: %d, Inc: %d, CodeHash: %x}\n", address, &account.Balance, account.Nonce, account.Incarnation, account.CodeHash)
+	//}
 	if original.Incarnation > account.Incarnation {
 		//del, before create: to clanup code/storage
 		if err := w.rs.domains.DomainDel(kv.CodeDomain, address[:], nil, nil, 0); err != nil {
@@ -510,9 +510,9 @@ func (w *StateWriterV3) UpdateAccountData(address common.Address, original, acco
 }
 
 func (w *StateWriterV3) UpdateAccountCode(address common.Address, incarnation uint64, codeHash common.Hash, code []byte) error {
-	if w.trace {
-		fmt.Printf("code: %x, %x, valLen: %d\n", address.Bytes(), codeHash, len(code))
-	}
+	//	if w.trace {
+	fmt.Printf("code: %x, %x, code: %x\n", address.Bytes(), codeHash, code)
+	//	}
 	if err := w.rs.domains.DomainPut(kv.CodeDomain, address[:], nil, code, nil, 0); err != nil {
 		return err
 	}
@@ -522,10 +522,19 @@ func (w *StateWriterV3) UpdateAccountCode(address common.Address, incarnation ui
 	return nil
 }
 
+var xxxDeleted bool
+
 func (w *StateWriterV3) DeleteAccount(address common.Address, original *accounts.Account) error {
-	if w.trace {
-		fmt.Printf("del acc: %x\n", address)
+	if address == common.HexToAddress("fffffffffffffffffffffffffffffffffffffffe") {
+		if xxxDeleted {
+			return nil
+		}
+		xxxDeleted = true
 	}
+
+	//if w.trace {
+	fmt.Printf("del acc: %x\n", address)
+	//}
 	if err := w.rs.domains.DomainDel(kv.AccountsDomain, address[:], nil, nil, 0); err != nil {
 		return err
 	}
@@ -536,6 +545,7 @@ func (w *StateWriterV3) DeleteAccount(address common.Address, original *accounts
 }
 
 func (w *StateWriterV3) WriteAccountStorage(address common.Address, incarnation uint64, key *common.Hash, original, value *uint256.Int) error {
+	fmt.Printf("storage,%x,%x,%x\n", address, *key, value.Bytes())
 	if *original == *value {
 		return nil
 	}
@@ -556,9 +566,7 @@ func (w *StateWriterV3) WriteAccountStorage(address common.Address, incarnation 
 }
 
 func (w *StateWriterV3) CreateContract(address common.Address) error {
-	if w.trace {
-		fmt.Printf("create contract: %x\n", address)
-	}
+	fmt.Printf("create contract: %x\n", address)
 
 	//seems don't need delete code here. IntraBlockState take care of it.
 	//if err := w.rs.domains.DomainDelPrefix(kv.StorageDomain, address[:]); err != nil {
