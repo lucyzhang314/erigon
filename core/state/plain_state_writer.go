@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/holiman/uint256"
 
@@ -45,7 +46,7 @@ func (w *PlainStateWriter) SetAccumulator(accumulator *shards.Accumulator) *Plai
 }
 
 func (w *PlainStateWriter) UpdateAccountData(address libcommon.Address, original, account *accounts.Account) error {
-	//fmt.Printf("balance,%x,%d\n", address, &account.Balance)
+	fmt.Printf("acc %x: {Balance: %d, Nonce: %d, Inc: %d, CodeHash: %x}\n", address, &account.Balance, account.Nonce, account.Incarnation, account.CodeHash)
 	if w.csw != nil {
 		if err := w.csw.UpdateAccountData(address, original, account); err != nil {
 			return err
@@ -69,7 +70,7 @@ func (w *PlainStateWriter) UpdateAccountData(address libcommon.Address, original
 }
 
 func (w *PlainStateWriter) UpdateAccountCode(address libcommon.Address, incarnation uint64, codeHash libcommon.Hash, code []byte) error {
-	//fmt.Printf("code,%x,%x\n", address, code)
+	fmt.Printf("code: %x, %x, code: %x\n", address.Bytes(), codeHash, code)
 	if w.csw != nil {
 		if err := w.csw.UpdateAccountCode(address, incarnation, codeHash, code); err != nil {
 			return err
@@ -85,7 +86,11 @@ func (w *PlainStateWriter) UpdateAccountCode(address libcommon.Address, incarnat
 }
 
 func (w *PlainStateWriter) DeleteAccount(address libcommon.Address, original *accounts.Account) error {
-	//fmt.Printf("delete,%x\n", address)
+	if address == libcommon.HexToAddress("2adc25665018aa1fe0e6bc666dac8fc2697ff9ba") {
+		return nil
+	}
+	fmt.Printf("del acc: %x\n", address)
+
 	if w.csw != nil {
 		if err := w.csw.DeleteAccount(address, original); err != nil {
 			return err
@@ -108,7 +113,7 @@ func (w *PlainStateWriter) DeleteAccount(address libcommon.Address, original *ac
 }
 
 func (w *PlainStateWriter) WriteAccountStorage(address libcommon.Address, incarnation uint64, key *libcommon.Hash, original, value *uint256.Int) error {
-	//fmt.Printf("storage,%x,%x,%x\n", address, *key, value.Bytes())
+	fmt.Printf("storage,%x,%x,%x\n", address, *key, value.Bytes())
 	if w.csw != nil {
 		if err := w.csw.WriteAccountStorage(address, incarnation, key, original, value); err != nil {
 			return err
@@ -130,6 +135,7 @@ func (w *PlainStateWriter) WriteAccountStorage(address libcommon.Address, incarn
 }
 
 func (w *PlainStateWriter) CreateContract(address libcommon.Address) error {
+	fmt.Printf("create contract: %x\n", address)
 	if w.csw != nil {
 		if err := w.csw.CreateContract(address); err != nil {
 			return err

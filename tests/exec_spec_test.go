@@ -18,7 +18,7 @@ func TestExecutionSpec(t *testing.T) {
 
 	bt := new(testMatcher)
 
-	path := filepath.Join(".", "execution-spec-tests", "prague", "eip7702_set_code_tx", "set_code_txs", "set_code_to_sstore_then_sload.json")
+	path := filepath.Join(".", "execution-spec-tests", "prague", "eip7702_set_code_tx", "set_code_txs", "set_code_to_sstore.json")
 
 	checkStateRoot := true
 
