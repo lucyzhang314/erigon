@@ -743,9 +743,12 @@ func stageHeaders(db kv.RwDB, ctx context.Context, logger log.Logger) error {
 		if err = rawdb.TruncateTd(tx, progress+1); err != nil {
 			return err
 		}
-		hash, err := br.CanonicalHash(ctx, tx, progress-1)
+		hash, ok, err := br.CanonicalHash(ctx, tx, progress-1)
 		if err != nil {
 			return err
+		}
+		if !ok {
+			return fmt.Errorf("canonical hash not found: %d", progress-1)
 		}
 		if err = rawdb.WriteHeadHeaderHash(tx, hash); err != nil {
 			return err
@@ -1428,9 +1431,9 @@ func newSync(ctx context.Context, db kv.RwDB, miningConfig *params.MiningConfig,
 		recents = bor.Recents
 		signatures = bor.Signatures
 	}
-	stagesDefault := stages2.NewDefaultStages(context.Background(), db, snapDb, p2p.Config{}, &cfg, sentryControlServer, notifications, nil, blockReader, blockRetire, agg, nil, nil,
+	stages := stages2.NewDefaultStages(context.Background(), db, snapDb, p2p.Config{}, &cfg, sentryControlServer, notifications, nil, blockReader, blockRetire, agg, nil, nil,
 		heimdallClient, recents, signatures, logger)
-	sync := stagedsync.New(cfg.Sync, stagesDefault, stagedsync.DefaultUnwindOrder, stagedsync.DefaultPruneOrder, logger, stages.ApplyingBlocks)
+	sync := stagedsync.New(cfg.Sync, stages, stagedsync.DefaultUnwindOrder, stagedsync.DefaultPruneOrder, logger)
 
 	miner := stagedsync.NewMiningState(&cfg.Miner)
 	miningCancel := make(chan struct{})
@@ -1469,7 +1472,6 @@ func newSync(ctx context.Context, db kv.RwDB, miningConfig *params.MiningConfig,
 		stagedsync.MiningUnwindOrder,
 		stagedsync.MiningPruneOrder,
 		logger,
-		stages.BlockProduction,
 	)
 
 	return engine, vmConfig, sync, miningSync, miner
