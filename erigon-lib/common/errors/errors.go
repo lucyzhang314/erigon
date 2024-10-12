@@ -14,18 +14,20 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with Erigon. If not, see <http://www.gnu.org/licenses/>.
 
-package committee_subscription
+package errors
 
-import (
-	"context"
+import "errors"
 
-	"github.com/erigontech/erigon/cl/cltypes"
-	"github.com/erigontech/erigon/cl/cltypes/solid"
-)
+func IsOneOf(err error, targets []error) bool {
+	if err == nil {
+		return false
+	}
 
-//go:generate mockgen -typed=true -destination=./mock_services/committee_subscribe_mock.go -package=mock_services . CommitteeSubscribe
-type CommitteeSubscribe interface {
-	AddAttestationSubscription(ctx context.Context, p *cltypes.BeaconCommitteeSubscription) error
-	AggregateAttestation(att *solid.Attestation) error
-	NeedToAggregate(att *solid.Attestation) bool
+	for _, target := range targets {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+
+	return false
 }
