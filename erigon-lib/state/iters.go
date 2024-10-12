@@ -17,7 +17,6 @@
 package state
 
 import (
-	"github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/kv"
 	"github.com/erigontech/erigon-lib/kv/order"
 	"github.com/erigontech/erigon-lib/kv/stream"
@@ -30,7 +29,5 @@ type CanonicalsReader interface {
 	// To get all canonical blocks, use fromTxNum=0, toTxNum=-1
 	// For reverse iteration use order.Desc and fromTxNum=-1, toTxNum=-1
 	TxnIdsOfCanonicalBlocks(tx kv.Tx, fromTxNum, toTxNum int, asc order.By, limit int) (stream.U64, error)
-	BaseTxnID(tx kv.Tx, blockNum uint64, blockHash common.Hash) (kv.TxnId, error)
 	TxNum2ID(tx kv.Tx, txNum uint64) (blockNum uint64, txnID kv.TxnId, ok bool, err error)
-	LastFrozenTxNum(tx kv.Tx) (kv.TxnId, error)
 }
