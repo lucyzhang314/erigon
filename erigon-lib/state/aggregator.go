@@ -201,12 +201,23 @@ func NewAggregator(ctx context.Context, dirs datadir.Dirs, aggregationStep uint6
 	if a.d[kv.CommitmentDomain], err = NewDomain(cfg, aggregationStep, kv.CommitmentDomain, kv.TblCommitmentVals, kv.TblCommitmentHistoryKeys, kv.TblCommitmentHistoryVals, kv.TblCommitmentIdx, integrityCheck, logger); err != nil {
 		return nil, err
 	}
-	aCfg := AppendableCfg{
-		Salt: salt, Dirs: dirs, DB: db, iters: iters,
+	cfg = domainCfg{
+		hist: histCfg{
+			iiCfg:             iiCfg{salt: salt, dirs: dirs, db: db},
+			withLocalityIndex: false, withExistenceIndex: false,
+			compression: seg.CompressNone, historyLargeValues: false,
+		},
+		compress: seg.CompressNone, //seg.CompressKeys | seg.CompressVals,
 	}
-	if a.ap[kv.ReceiptsAppendable], err = NewAppendable(aCfg, aggregationStep, "receipts", kv.Receipts, nil, logger); err != nil {
+	if a.d[kv.ReceiptDomain], err = NewDomain(cfg, aggregationStep, kv.ReceiptDomain, kv.TblReceiptVals, kv.TblReceiptHistoryKeys, kv.TblReceiptHistoryVals, kv.TblReceiptIdx, integrityCheck, logger); err != nil {
 		return nil, err
 	}
+	//aCfg := AppendableCfg{
+	//	Salt: salt, Dirs: dirs, DB: db, iters: iters,
+	//}
+	//if a.ap[kv.ReceiptsAppendable], err = NewAppendable(aCfg, aggregationStep, "receipts", kv.Receipts, nil, logger); err != nil {
+	//	return nil, err
+	//}
 	if err := a.registerII(kv.LogAddrIdxPos, salt, dirs, db, aggregationStep, kv.FileLogAddressIdx, kv.TblLogAddressKeys, kv.TblLogAddressIdx, logger); err != nil {
 		return nil, err
 	}
@@ -612,19 +623,6 @@ func (sf AggV3StaticFiles) CleanupOnError() {
 	}
 }
 
-// [from, to)
-func (a *Aggregator) BuildFiles2(ctx context.Context, fromStep, toStep uint64) error {
-	for step := fromStep; step < toStep; step++ { //`step` must be fully-written - means `step+1` records must be visible
-		if err := a.buildFiles(ctx, step); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, common2.ErrStopped) {
-				return err
-			}
-			a.logger.Warn("[snapshots] buildFilesInBackground", "err", err)
-			return err
-		}
-	}
-	return nil
-}
 func (a *Aggregator) buildFiles(ctx context.Context, step uint64) error {
 	a.logger.Debug("[agg] collate and build", "step", step, "collate_workers", a.collateAndBuildWorkers, "merge_workers", a.mergeWorkers, "compress_workers", a.d[kv.AccountsDomain].compressCfg.Workers)
 
@@ -806,6 +804,40 @@ Loop:
 			}
 		}
 	}
+
+	return nil
+}
+
+// [from, to)
+func (a *Aggregator) BuildFiles2(ctx context.Context, fromStep, toStep uint64) error {
+	if ok := a.buildingFiles.CompareAndSwap(false, true); !ok {
+		return nil
+	}
+	go func() {
+		defer a.buildingFiles.Store(false)
+		if toStep > fromStep {
+			log.Info("[agg] build", "fromStep", fromStep, "toStep", toStep)
+		}
+		for step := fromStep; step < toStep; step++ { //`step` must be fully-written - means `step+1` records must be visible
+			if err := a.buildFiles(ctx, step); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, common2.ErrStopped) {
+					panic(err)
+				}
+				a.logger.Warn("[snapshots] buildFilesInBackground", "err", err)
+				panic(err)
+			}
+		}
+
+		if ok := a.mergingFiles.CompareAndSwap(false, true); !ok {
+			return
+		}
+		go func() {
+			defer a.mergingFiles.Store(false)
+			if err := a.MergeLoop(ctx); err != nil {
+				panic(err)
+			}
+		}()
+	}()
 
 	return nil
 }
@@ -1779,6 +1811,8 @@ func (ac *AggregatorRoTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs
 		return ac.d[kv.CodeDomain].ht.IdxRange(k, fromTs, toTs, asc, limit, tx)
 	case kv.CommitmentHistoryIdx:
 		return ac.d[kv.StorageDomain].ht.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.ReceiptHistoryIdx:
+		return ac.d[kv.ReceiptDomain].ht.IdxRange(k, fromTs, toTs, asc, limit, tx)
 	//case kv.GasUsedHistoryIdx:
 	//	return ac.d[kv.GasUsedDomain].ht.IdxRange(k, fromTs, toTs, asc, limit, tx)
 	case kv.LogTopicIdx:
@@ -1813,6 +1847,8 @@ func (ac *AggregatorRoTx) HistorySeek(name kv.History, key []byte, ts uint64, tx
 		return ac.d[kv.CodeDomain].ht.HistorySeek(key, ts, tx)
 	case kv.CommitmentHistory:
 		return ac.d[kv.CommitmentDomain].ht.HistorySeek(key, ts, tx)
+	case kv.ReceiptHistory:
+		return ac.d[kv.ReceiptDomain].ht.HistorySeek(key, ts, tx)
 	//case kv.GasUsedHistory:
 	//	return ac.d[kv.GasUsedDomain].ht.HistorySeek(key, ts, tx)
 	default:
@@ -1879,7 +1915,8 @@ func (a *Aggregator) BeginFilesRo() *AggregatorRoTx {
 
 	return ac
 }
-func (ac *AggregatorRoTx) ViewID() uint64 { return ac.id }
+func (ac *AggregatorRoTx) ViewID() uint64                       { return ac.id }
+func (ac *AggregatorRoTx) DbgDomain(name kv.Domain) *DomainRoTx { return ac.d[name] }
 
 // --- Domain part START ---
 
@@ -1891,8 +1928,7 @@ func (ac *AggregatorRoTx) DomainRangeLatest(tx kv.Tx, domain kv.Domain, from, to
 }
 
 func (ac *AggregatorRoTx) DomainGetAsOf(tx kv.Tx, name kv.Domain, key []byte, ts uint64) (v []byte, ok bool, err error) {
-	v, err = ac.d[name].GetAsOf(key, ts, tx)
-	return v, v != nil, err
+	return ac.d[name].GetAsOf(key, ts, tx)
 }
 func (ac *AggregatorRoTx) GetLatest(domain kv.Domain, k, k2 []byte, tx kv.Tx) (v []byte, step uint64, ok bool, err error) {
 	return ac.d[domain].GetLatest(k, k2, tx)
@@ -1932,6 +1968,11 @@ func (ac *AggregatorRoTx) DebugEFAllValuesAreInRange(ctx context.Context, name k
 		}
 	case kv.CommitmentHistoryIdx:
 		err := ac.d[kv.CommitmentDomain].ht.iit.DebugEFAllValuesAreInRange(ctx, failFast, fromStep)
+		if err != nil {
+			return err
+		}
+	case kv.ReceiptHistoryIdx:
+		err := ac.d[kv.ReceiptDomain].ht.iit.DebugEFAllValuesAreInRange(ctx, failFast, fromStep)
 		if err != nil {
 			return err
 		}

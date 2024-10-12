@@ -118,11 +118,12 @@ func (p *Progress) Log(suffix string, rs *state.StateV3, in *state.QueueWithRetr
 
 	gasSec := uint64(float64(gas-p.prevGasUsed) / interval.Seconds())
 	txSec := uint64(float64(txCount-p.prevTxCount) / interval.Seconds())
+	diffBlocks := max(int(outputBlockNum)-int(p.prevOutputBlockNum)+1, 0)
 
 	p.logger.Info(fmt.Sprintf("[%s]"+suffix, p.logPrefix),
 		"blk", outputBlockNum,
-		"blks", outputBlockNum-p.prevOutputBlockNum+1,
-		"blk/s", fmt.Sprintf("%.1f", float64(outputBlockNum-p.prevOutputBlockNum+1)/interval.Seconds()),
+		"blks", diffBlocks,
+		"blk/s", fmt.Sprintf("%.1f", float64(diffBlocks)/interval.Seconds()),
 		"txs", txCount-p.prevTxCount,
 		"tx/s", common.PrettyCounter(txSec),
 		"gas/s", common.PrettyCounter(gasSec),
@@ -341,12 +342,16 @@ func ExecV3(ctx context.Context,
 	blockNum = doms.BlockNum()
 	outputTxNum.Store(doms.TxNum())
 
+	if maxBlockNum < blockNum {
+		return nil
+	}
+
 	shouldGenerateChangesets := maxBlockNum-blockNum <= changesetSafeRange || cfg.keepAllChangesets
 	if blockNum < cfg.blockReader.FrozenBlocks() {
 		shouldGenerateChangesets = false
 	}
 
-	if maxBlockNum-blockNum > 16 {
+	if maxBlockNum > blockNum+16 {
 		log.Info(fmt.Sprintf("[%s] starting", execStage.LogPrefix()),
 			"from", blockNum, "to", maxBlockNum, "fromTxNum", doms.TxNum(), "offsetFromBlockBeginning", offsetFromBlockBeginning, "initialCycle", initialCycle, "useExternalTx", useExternalTx)
 	}
@@ -358,7 +363,7 @@ func ExecV3(ctx context.Context,
 	var count uint64
 	var lock sync.RWMutex
 
-	shouldReportToTxPool := maxBlockNum-blockNum <= 64
+	shouldReportToTxPool := cfg.notifications != nil && !isMining && maxBlockNum <= blockNum+64
 	var accumulator *shards.Accumulator
 	if shouldReportToTxPool {
 		accumulator = cfg.notifications.Accumulator
@@ -521,7 +526,7 @@ func ExecV3(ctx context.Context,
 					if err := func() error {
 						//Drain results (and process) channel because read sets do not carry over
 						for !blockComplete.Load() {
-							rws.DrainNonBlocking()
+							rws.DrainNonBlocking(ctx)
 							applyWorker.ResetTx(tx)
 
 							processedTxNum, conflicts, triggers, processedBlockNum, stoppedAtBlockEnd, err := processResultQueue(ctx, in, rws, outputTxNum.Load(), rs, agg, tx, nil, applyWorker, false, true, isMining)
@@ -549,7 +554,7 @@ func ExecV3(ctx context.Context,
 						}
 
 						// Drain results channel because read sets do not carry over
-						rws.DropResults(func(txTask *state.TxTask) {
+						rws.DropResults(ctx, func(txTask *state.TxTask) {
 							rs.ReTry(txTask, in)
 						})
 
@@ -659,7 +664,6 @@ func ExecV3(ctx context.Context,
 
 	slowDownLimit := time.NewTicker(time.Second)
 	defer slowDownLimit.Stop()
-	canonicalReader := rawdb.NewCanonicalReader(txNumsReader)
 
 	var readAhead chan uint64
 	if !parallel {
@@ -673,10 +677,6 @@ func ExecV3(ctx context.Context,
 			defer clean()
 		}
 	}
-	var baseBlockTxnID kv.TxnId
-
-	//fmt.Printf("exec blocks: %d -> %d\n", blockNum, maxBlockNum)
-	var receiptsForStorage types.ReceiptsForStorage
 
 	var b *types.Block
 
@@ -726,10 +726,6 @@ Loop:
 		header := b.HeaderNoCopy()
 		skipAnalysis := core.SkipAnalysis(chainConfig, blockNum)
 		signer := *types.MakeSigner(chainConfig, blockNum, header.Time)
-		baseBlockTxnID, err = canonicalReader.BaseTxnID(applyTx, blockNum, b.Hash())
-		if err != nil {
-			return err
-		}
 
 		f := core.GetHashFn(header, getHeaderFunc)
 		getHashFnMute := &sync.Mutex{}
@@ -778,7 +774,7 @@ Loop:
 		}
 
 		rules := chainConfig.Rules(blockNum, b.Time())
-		var receiptsForConsensus types.Receipts
+		blockReceipts := make(types.Receipts, len(txs))
 		// During the first block execution, we may have half-block data in the snapshots.
 		// Thus, we need to skip the first txs in the block, however, this causes the GasUsed to be incorrect.
 		// So we skip that check for the first block, if we find half-executed data.
@@ -808,10 +804,17 @@ Loop:
 				// use history reader instead of state reader to catch up to the tx where we left off
 				HistoryExecution: offsetFromBlockBeginning > 0 && txIndex < int(offsetFromBlockBeginning),
 
-				BlockReceipts: receiptsForConsensus,
+				BlockReceipts: blockReceipts,
 
 				Config: chainConfig,
 			}
+			if txTask.HistoryExecution && usedGas == 0 {
+				usedGas, blobGasUsed, _, err = rawtemporaldb.ReceiptAsOf(applyTx.(kv.TemporalTx), txTask.TxNum)
+				if err != nil {
+					return err
+				}
+			}
+
 			if cfg.genesis != nil {
 				txTask.Config = cfg.genesis.Config
 			}
@@ -824,9 +827,6 @@ Loop:
 			doms.SetTxNum(txTask.TxNum)
 			doms.SetBlockNum(txTask.BlockNum)
 
-			//if txTask.HistoryExecution { // nolint
-			//	fmt.Printf("[dbg] txNum: %d, hist=%t\n", txTask.TxNum, txTask.HistoryExecution)
-			//}
 			if txIndex >= 0 && txIndex < len(txs) {
 				txTask.Tx = txs[txIndex]
 				txTask.TxAsMessage, err = txTask.Tx.AsMessage(signer, header.BaseFee, txTask.Rules)
@@ -882,26 +882,19 @@ Loop:
 					blobGasUsed += txTask.Tx.GetBlobGas()
 				}
 
-				if !(txTask.Final || txTask.TxIndex < 0) {
-					receipt := txTask.CreateReceipt(usedGas)
-					receiptsForConsensus = append(receiptsForConsensus, receipt) // for consensus check at Final
-					if receipt.GasUsed > 0 || len(receipt.Logs) > 0 {
-						receiptsForStorage = append(receiptsForStorage, (*types.ReceiptForStorage)(receipt))
-					}
-				}
+				txTask.CreateReceipt(applyTx)
 
 				if txTask.Final {
 					if !isMining && !inMemExec && !execStage.CurrentSyncCycle.IsInitialCycle {
-						cfg.notifications.RecentLogs.Add(receiptsForConsensus)
+						cfg.notifications.RecentLogs.Add(blockReceipts)
 					}
 					checkReceipts := !cfg.vmConfig.StatelessExec && chainConfig.IsByzantium(txTask.BlockNum) && !cfg.vmConfig.NoReceipts && !isMining
 					if txTask.BlockNum > 0 && !skipPostEvaluation { //Disable check for genesis. Maybe need somehow improve it in future - to satisfy TestExecutionSpec
-						if err := core.BlockPostValidation(usedGas, blobGasUsed, checkReceipts, receiptsForConsensus, txTask.Header, isMining); err != nil {
+						if err := core.BlockPostValidation(usedGas, blobGasUsed, checkReceipts, txTask.BlockReceipts, txTask.Header, isMining); err != nil {
 							return fmt.Errorf("%w, txnIdx=%d, %v", consensus.ErrInvalidBlock, txTask.TxIndex, err) //same as in stage_exec.go
 						}
 					}
 					usedGas, blobGasUsed = 0, 0
-					receiptsForConsensus = receiptsForConsensus[:0]
 				}
 				return nil
 			}(); err != nil {
@@ -931,56 +924,14 @@ Loop:
 				break Loop
 			}
 
-			if txTask.Final && len(receiptsForStorage) > 0 {
-				txnID := baseBlockTxnID + kv.TxnId(txTask.TxIndex)
-				//write for system txn also, but don't add it to `receipts` array (consensus doesn't expect it)
-				if err := rawtemporaldb.AppendReceipts2(doms, txnID, receiptsForStorage); err != nil {
+			if !txTask.Final {
+				var receipt *types.Receipt
+				if txTask.TxIndex >= 0 && !txTask.Final {
+					receipt = txTask.BlockReceipts[txTask.TxIndex]
+				}
+				if err := rawtemporaldb.AppendReceipt(doms, receipt, blobGasUsed); err != nil {
 					return err
 				}
-				receiptsForStorage = receiptsForStorage[:0]
-			}
-
-			//if len(receiptsForStorage) == 10 {
-			//	txnID := baseBlockTxnID + kv.TxnId(txTask.TxIndex)
-			//	//write for system txn also, but don't add it to `receipts` array (consensus doesn't expect it)
-			//	if err := rawtemporaldb.AppendReceipts2(doms, txnID, receiptsForStorage); err != nil {
-			//		return err
-			//	}
-			//	receiptsForStorage = receiptsForStorage[:0]
-			//}
-
-			if txTask.Final {
-				//if len(receiptsForStorage) == 0 {
-				//	receiptsForStorage = types.Receipts{
-				//		&types.Receipt{
-				//			TransactionIndex:  uint(txTask.TxIndex),
-				//			CumulativeGasUsed: usedGas,
-				//			Status:            types.ReceiptStatusSuccessful,
-				//		},
-				//	}
-				//}
-				//txnID := baseBlockTxnID + kv.TxnId(txTask.TxIndex)
-				//if err := rawtemporaldb.AppendReceipts2(doms, txnID, receiptsForStorage); err != nil {
-				//	return err
-				//}
-				//receiptsForStorage = receiptsForStorage[:0]
-
-				/*
-					txnID := baseBlockTxnID + kv.TxnId(txTask.TxIndex)
-					//write for system txn also, but don't add it to `receipts` array (consensus doesn't expect it)
-					if err := rawtemporaldb.AppendReceipts(doms, txnID, &types.Receipt{
-						TransactionIndex:  uint(txTask.TxIndex),
-						CumulativeGasUsed: usedGas,
-						Status:            types.ReceiptStatusSuccessful,
-					}); err != nil {
-						return err
-					}
-				*/
-			} else {
-				//txnID := baseBlockTxnID + kv.TxnId(txTask.TxIndex)
-				//if err := rawtemporaldb.AppendReceipts(doms, txnID, receiptsForConsensus[txTask.TxIndex]); err != nil {
-				//	return err
-				//}
 			}
 
 			// MA applystate

@@ -205,25 +205,6 @@ func getAddrsBitmap(tx kv.Tx, addrs []common.Address, from, to uint64) (*roaring
 	return roaring.FastOr(rx...), nil
 }
 
-func applyFilters(out *roaring.Bitmap, tx kv.Tx, begin, end uint64, crit filters.FilterCriteria) error {
-	out.AddRange(begin, end+1) // [from,to)
-	topicsBitmap, err := getTopicsBitmap(tx, crit.Topics, begin, end)
-	if err != nil {
-		return err
-	}
-	if topicsBitmap != nil {
-		out.And(topicsBitmap)
-	}
-	addrBitmap, err := getAddrsBitmap(tx, crit.Addresses, begin, end)
-	if err != nil {
-		return err
-	}
-	if addrBitmap != nil {
-		out.And(addrBitmap)
-	}
-	return nil
-}
-
 func applyFiltersV3(txNumsReader rawdbv3.TxNumsReader, tx kv.TemporalTx, begin, end uint64, crit filters.FilterCriteria) (out stream.U64, err error) {
 	//[from,to)
 	var fromTxNum, toTxNum uint64
@@ -287,7 +268,6 @@ func (api *BaseAPI) getLogsV3(ctx context.Context, tx kv.TemporalTx, begin, end 
 		return logs, err
 	}
 
-	var baseBlockTxnID kv.TxnId
 	it := rawdbv3.TxNums2BlockNums(tx,
 		txNumsReader,
 		txNumbers, order.Asc)
@@ -316,8 +296,6 @@ func (api *BaseAPI) getLogsV3(ctx context.Context, tx kv.TemporalTx, begin, end 
 			}
 			blockHash = header.Hash()
 
-			rrrr := rawdb.NewCanonicalReader(rawdbv3.TxNums.WithCustomReadTxNumFunc(freezeblocks.ReadTxNumFuncFromBlockReader(ctx, api._blockReader)))
-			baseBlockTxnID, err = rrrr.BaseTxnID(tx, blockNum, blockHash)
 			if err != nil {
 				return nil, err
 			}
@@ -333,14 +311,14 @@ func (api *BaseAPI) getLogsV3(ctx context.Context, tx kv.TemporalTx, begin, end 
 			continue
 		}
 
-		_, err = exec.ExecTxn(txNum, txIndex, txn)
+		_, err = exec.ExecTxn(txNum, txIndex, txn, false)
 		if err != nil {
 			return nil, err
 		}
 		rawLogs := exec.GetRawLogs(txIndex)
 
 		// `ReadReceipt` does fill `rawLogs` calulated fields. but we don't need it anymore.
-		r, err := rawtemporaldb.ReadReceipt(tx, baseBlockTxnID+kv.TxnId(txIndex), rawLogs, txIndex, blockHash, blockNum, txn)
+		r, err := rawtemporaldb.ReceiptAsOfWithApply(tx, txNum, rawLogs, txIndex, blockHash, blockNum, txn)
 		if err != nil {
 			return nil, err
 		}
@@ -596,7 +574,7 @@ func (i *MapTxNum2BlockNumIter) Next() (txNum, blockNum uint64, txIndex int, isF
 		if !ok {
 			_lb, _lt, _ := i.txNumsReader.Last(i.tx)
 			_fb, _ft, _ := i.txNumsReader.First(i.tx)
-			return txNum, i.blockNum, txIndex, isFinalTxn, blockNumChanged, fmt.Errorf("can't find blockNumber by txnID=%d; last in db: (%d-%d, %d-%d)", txNum, _fb, _lb, _ft, _lt)
+			return txNum, i.blockNum, txIndex, isFinalTxn, blockNumChanged, fmt.Errorf("can't find blockNumber by txNum=%d; last in db: (%d-%d, %d-%d)", txNum, _fb, _lb, _ft, _lt)
 		}
 	}
 	blockNum = i.blockNum
