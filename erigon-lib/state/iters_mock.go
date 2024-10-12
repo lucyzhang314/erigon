@@ -12,7 +12,6 @@ package state
 import (
 	reflect "reflect"
 
-	common "github.com/erigontech/erigon-lib/common"
 	kv "github.com/erigontech/erigon-lib/kv"
 	order "github.com/erigontech/erigon-lib/kv/order"
 	stream "github.com/erigontech/erigon-lib/kv/stream"
@@ -40,84 +39,6 @@ func NewMockCanonicalsReader(ctrl *gomock.Controller) *MockCanonicalsReader {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockCanonicalsReader) EXPECT() *MockCanonicalsReaderMockRecorder {
 	return m.recorder
-}
-
-// BaseTxnID mocks base method.
-func (m *MockCanonicalsReader) BaseTxnID(arg0 kv.Tx, arg1 uint64, arg2 common.Hash) (kv.TxnId, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "BaseTxnID", arg0, arg1, arg2)
-	ret0, _ := ret[0].(kv.TxnId)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// BaseTxnID indicates an expected call of BaseTxnID.
-func (mr *MockCanonicalsReaderMockRecorder) BaseTxnID(arg0, arg1, arg2 any) *MockCanonicalsReaderBaseTxnIDCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BaseTxnID", reflect.TypeOf((*MockCanonicalsReader)(nil).BaseTxnID), arg0, arg1, arg2)
-	return &MockCanonicalsReaderBaseTxnIDCall{Call: call}
-}
-
-// MockCanonicalsReaderBaseTxnIDCall wrap *gomock.Call
-type MockCanonicalsReaderBaseTxnIDCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *MockCanonicalsReaderBaseTxnIDCall) Return(arg0 kv.TxnId, arg1 error) *MockCanonicalsReaderBaseTxnIDCall {
-	c.Call = c.Call.Return(arg0, arg1)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *MockCanonicalsReaderBaseTxnIDCall) Do(f func(kv.Tx, uint64, common.Hash) (kv.TxnId, error)) *MockCanonicalsReaderBaseTxnIDCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockCanonicalsReaderBaseTxnIDCall) DoAndReturn(f func(kv.Tx, uint64, common.Hash) (kv.TxnId, error)) *MockCanonicalsReaderBaseTxnIDCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// LastFrozenTxNum mocks base method.
-func (m *MockCanonicalsReader) LastFrozenTxNum(arg0 kv.Tx) (kv.TxnId, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LastFrozenTxNum", arg0)
-	ret0, _ := ret[0].(kv.TxnId)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// LastFrozenTxNum indicates an expected call of LastFrozenTxNum.
-func (mr *MockCanonicalsReaderMockRecorder) LastFrozenTxNum(arg0 any) *MockCanonicalsReaderLastFrozenTxNumCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LastFrozenTxNum", reflect.TypeOf((*MockCanonicalsReader)(nil).LastFrozenTxNum), arg0)
-	return &MockCanonicalsReaderLastFrozenTxNumCall{Call: call}
-}
-
-// MockCanonicalsReaderLastFrozenTxNumCall wrap *gomock.Call
-type MockCanonicalsReaderLastFrozenTxNumCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *MockCanonicalsReaderLastFrozenTxNumCall) Return(arg0 kv.TxnId, arg1 error) *MockCanonicalsReaderLastFrozenTxNumCall {
-	c.Call = c.Call.Return(arg0, arg1)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *MockCanonicalsReaderLastFrozenTxNumCall) Do(f func(kv.Tx) (kv.TxnId, error)) *MockCanonicalsReaderLastFrozenTxNumCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockCanonicalsReaderLastFrozenTxNumCall) DoAndReturn(f func(kv.Tx) (kv.TxnId, error)) *MockCanonicalsReaderLastFrozenTxNumCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
 }
 
 // TxNum2ID mocks base method.
