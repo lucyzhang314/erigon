@@ -263,8 +263,7 @@ func NewDirtySegment(segType snaptype.Type, version snaptype.Version, from uint6
 
 type VisibleSegment struct {
 	Range
-	segType snaptype.Type
-	src     *DirtySegment
+	src *DirtySegment
 }
 
 func (s *VisibleSegment) Src() *DirtySegment {
@@ -770,9 +769,8 @@ func RecalcVisibleSegments(dirtySegments *btree.BTreeG[*DirtySegment]) []*Visibl
 				newVisibleSegments = newVisibleSegments[:len(newVisibleSegments)-1]
 			}
 			newVisibleSegments = append(newVisibleSegments, &VisibleSegment{
-				Range:   sn.Range,
-				segType: sn.segType,
-				src:     sn,
+				Range: sn.Range,
+				src:   sn,
 			})
 		}
 		return true
