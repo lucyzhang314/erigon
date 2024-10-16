@@ -9,6 +9,7 @@ import (
 	"github.com/erigontech/erigon-lib/log/v3"
 	"github.com/erigontech/erigon/consensus"
 	"github.com/erigontech/erigon/core"
+	"github.com/erigontech/erigon/core/rawdb/rawtemporaldb"
 	"github.com/erigontech/erigon/core/state"
 	"github.com/erigontech/erigon/core/types"
 	"github.com/erigontech/erigon/core/vm"
@@ -84,7 +85,7 @@ func (g *Generator) PrepareEnv(ctx context.Context, block *types.Block, cfg *cha
 	}, nil
 }
 
-func (g *Generator) GetReceipt(ctx context.Context, cfg *chain.Config, tx kv.Tx, block *types.Block, index int, optimize bool) (*types.Receipt, error) {
+func (g *Generator) GetReceipt(ctx context.Context, cfg *chain.Config, tx kv.TemporalTx, block *types.Block, index int, optimize bool, txNum uint64) (*types.Receipt, error) {
 	var receipt *types.Receipt
 	if optimize {
 		genEnv, err := g.PrepareEnv(ctx, block, cfg, tx, index)
@@ -95,6 +96,11 @@ func (g *Generator) GetReceipt(ctx context.Context, cfg *chain.Config, tx kv.Tx,
 		if err != nil {
 			return nil, err
 		}
+		cumGasUsed, _, _, err := rawtemporaldb.ReceiptAsOf(tx, txNum)
+		if err != nil {
+			return nil, err
+		}
+		receipt.CumulativeGasUsed = cumGasUsed
 		receipt.BlockHash = block.Hash()
 	} else {
 		genEnv, err := g.PrepareEnv(ctx, block, cfg, tx, 0)
