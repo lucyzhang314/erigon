@@ -278,7 +278,7 @@ func (api *APIImpl) CallMany(ctx context.Context, bundles []Bundle, simulateCont
 			}
 			txCtx = core.NewEVMTxContext(msg)
 			evm = vm.NewEVM(blockCtx, txCtx, evm.IntraBlockState(), chainConfig, vm.Config{Debug: false})
-			result, err := core.ApplyMessage(evm, msg, gp, true, false)
+			result, err := core.ApplyMessage(evm, msg, gp, true /* refunds */, false /* gasBailout */)
 			if err != nil {
 				return nil, err
 			}
@@ -292,7 +292,11 @@ func (api *APIImpl) CallMany(ctx context.Context, bundles []Bundle, simulateCont
 			jsonResult := make(map[string]interface{})
 			if result.Err != nil {
 				if len(result.Revert()) > 0 {
-					jsonResult["error"] = ethapi.NewRevertError(result)
+					revertErr := ethapi.NewRevertError(result)
+					jsonResult["error"] = map[string]interface{}{
+						"message": revertErr.Error(),
+						"data":    revertErr.ErrorData(),
+					}
 				} else {
 					jsonResult["error"] = result.Err.Error()
 				}
