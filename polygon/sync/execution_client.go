@@ -18,22 +18,28 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/gointerfaces"
 	"github.com/erigontech/erigon-lib/gointerfaces/executionproto"
 	"github.com/erigontech/erigon/core/types"
 	eth1utils "github.com/erigontech/erigon/turbo/execution/eth1/eth1_utils"
 )
 
+var errForkChoiceUpdateFailure = errors.New("fork choice update failed")
+
 type ExecutionClient interface {
 	InsertBlocks(ctx context.Context, blocks []*types.Block) error
-	UpdateForkChoice(ctx context.Context, tip *types.Header, finalizedHeader *types.Header) error
+	UpdateForkChoice(ctx context.Context, tip *types.Header, finalizedHeader *types.Header) (common.Hash, error)
 	CurrentHeader(ctx context.Context) (*types.Header, error)
 	GetHeader(ctx context.Context, blockNum uint64) (*types.Header, error)
+	GetTd(ctx context.Context, blockNum uint64, blockHash common.Hash) (*big.Int, error)
 }
 
 type executionClient struct {
@@ -76,7 +82,7 @@ func (e *executionClient) InsertBlocks(ctx context.Context, blocks []*types.Bloc
 	}
 }
 
-func (e *executionClient) UpdateForkChoice(ctx context.Context, tip *types.Header, finalizedHeader *types.Header) error {
+func (e *executionClient) UpdateForkChoice(ctx context.Context, tip *types.Header, finalizedHeader *types.Header) (common.Hash, error) {
 	tipHash := tip.Hash()
 	const timeout = 5 * time.Second
 
@@ -89,13 +95,23 @@ func (e *executionClient) UpdateForkChoice(ctx context.Context, tip *types.Heade
 
 	response, err := e.client.UpdateForkChoice(ctx, &request)
 	if err != nil {
-		return err
+		return common.Hash{}, err
+	}
+
+	var latestValidHash common.Hash
+	if response.LatestValidHash != nil {
+		latestValidHash = gointerfaces.ConvertH256ToHash(response.LatestValidHash)
 	}
 
 	if len(response.ValidationError) > 0 {
-		return fmt.Errorf("executionClient.UpdateForkChoice failed with a validation error: %s", response.ValidationError)
+		return latestValidHash, fmt.Errorf("%w: validationErr=%s", errForkChoiceUpdateFailure, response.Status)
 	}
-	return nil
+
+	if response.Status != executionproto.ExecutionStatus_Success {
+		return latestValidHash, fmt.Errorf("%w: status=%s", errForkChoiceUpdateFailure, response.Status)
+	}
+
+	return latestValidHash, nil
 }
 
 func (e *executionClient) CurrentHeader(ctx context.Context) (*types.Header, error) {
@@ -128,4 +144,16 @@ func (e *executionClient) GetHeader(ctx context.Context, blockNum uint64) (*type
 	}
 
 	return header, nil
+}
+
+func (e *executionClient) GetTd(ctx context.Context, blockNum uint64, blockHash common.Hash) (*big.Int, error) {
+	response, err := e.client.GetTD(ctx, &executionproto.GetSegmentRequest{
+		BlockNumber: &blockNum,
+		BlockHash:   gointerfaces.ConvertHashToH256(blockHash),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return eth1utils.ConvertBigIntFromRpc(response.GetTd()), nil
 }

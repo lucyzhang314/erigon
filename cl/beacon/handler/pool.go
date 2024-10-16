@@ -63,10 +63,10 @@ func (a *ApiHandler) GetEthV1BeaconPoolAttestations(w http.ResponseWriter, r *ht
 	}
 	ret := make([]any, 0, len(atts))
 	for i := range atts {
-		if slot != nil && atts[i].AttestantionData().Slot() != *slot {
+		if slot != nil && atts[i].Data.Slot != *slot {
 			continue
 		}
-		if committeeIndex != nil && atts[i].AttestantionData().CommitteeIndex() != *committeeIndex {
+		if committeeIndex != nil && atts[i].Data.CommitteeIndex != *committeeIndex {
 			continue
 		}
 		ret = append(ret, atts[i])
@@ -90,8 +90,8 @@ func (a *ApiHandler) PostEthV1BeaconPoolAttestations(w http.ResponseWriter, r *h
 	failures := []poolingFailure{}
 	for i, attestation := range req {
 		var (
-			slot                  = attestation.AttestantionData().Slot()
-			cIndex                = attestation.AttestantionData().CommitteeIndex()
+			slot                  = attestation.Data.Slot
+			cIndex                = attestation.Data.CommitteeIndex
 			committeeCountPerSlot = headState.CommitteeCount(slot / a.beaconChainCfg.SlotsPerEpoch)
 			subnet                = subnets.ComputeSubnetForAttestation(committeeCountPerSlot, slot, cIndex, a.beaconChainCfg.SlotsPerEpoch, a.netConfig.AttestationSubnetCount)
 		)
@@ -109,9 +109,10 @@ func (a *ApiHandler) PostEthV1BeaconPoolAttestations(w http.ResponseWriter, r *h
 				Name:     gossip.TopicNamePrefixBeaconAttestation,
 				SubnetId: &subnet,
 			},
+			ImmediateProcess: true, // we want to process attestation immediately
 		}
 
-		if err := a.attestationService.ProcessMessage(r.Context(), &subnet, attestationWithGossipData); err != nil {
+		if err := a.attestationService.ProcessMessage(r.Context(), &subnet, attestationWithGossipData); err != nil && !errors.Is(err, services.ErrIgnore) {
 			log.Warn("[Beacon REST] failed to process attestation in attestation service", "err", err)
 			failures = append(failures, poolingFailure{
 				Index:   i,
@@ -298,6 +299,7 @@ func (a *ApiHandler) PostEthV1ValidatorAggregatesAndProof(w http.ResponseWriter,
 		if err := a.aggregateAndProofsService.ProcessMessage(r.Context(), nil, &cltypes.SignedAggregateAndProofData{
 			SignedAggregateAndProof: v,
 			GossipData:              gossipData,
+			ImmediateProcess:        true, // we want to process aggregate and proof immediately
 		}); err != nil && !errors.Is(err, services.ErrIgnore) {
 			log.Warn("[Beacon REST] failed to process bls-change", "err", err)
 			failures = append(failures, poolingFailure{Index: len(failures), Message: err.Error()})

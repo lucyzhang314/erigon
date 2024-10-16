@@ -23,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Giulio2002/bls"
 	sentinel "github.com/erigontech/erigon-lib/gointerfaces/sentinelproto"
 	"github.com/erigontech/erigon-lib/log/v3"
 	"github.com/erigontech/erigon/cl/aggregation"
@@ -44,22 +43,18 @@ var (
 	computeSubnetForAttestation  = subnets.ComputeSubnetForAttestation
 	computeCommitteeCountPerSlot = subnets.ComputeCommitteeCountPerSlot
 	computeSigningRoot           = fork.ComputeSigningRoot
-	blsVerify                    = bls.Verify
-	blsVerifyMultipleSignatures  = bls.VerifyMultipleSignatures
-	batchCheckInterval           = 50 * time.Millisecond
 )
 
 type attestationService struct {
-	ctx                context.Context
-	forkchoiceStore    forkchoice.ForkChoiceStorage
-	committeeSubscribe committee_subscription.CommitteeSubscribe
-	ethClock           eth_clock.EthereumClock
-	syncedDataManager  synced_data.SyncedData
-	beaconCfg          *clparams.BeaconChainConfig
-	netCfg             *clparams.NetworkConfig
-	emitters           *beaconevents.EventEmitter
-	sentinel           sentinel.SentinelClient
-	verifyAndExecute   chan *AggregateVerificationData
+	ctx                    context.Context
+	forkchoiceStore        forkchoice.ForkChoiceStorage
+	committeeSubscribe     committee_subscription.CommitteeSubscribe
+	ethClock               eth_clock.EthereumClock
+	syncedDataManager      synced_data.SyncedData
+	beaconCfg              *clparams.BeaconChainConfig
+	netCfg                 *clparams.NetworkConfig
+	emitters               *beaconevents.EventEmitter
+	batchSignatureVerifier *BatchSignatureVerifier
 	// validatorAttestationSeen maps from epoch to validator index. This is used to ignore duplicate validator attestations in the same epoch.
 	validatorAttestationSeen       *lru.CacheWithTTL[uint64, uint64] // validator index -> epoch
 	attestationProcessed           *lru.CacheWithTTL[[32]byte, struct{}]
@@ -70,6 +65,8 @@ type attestationService struct {
 type AttestationWithGossipData struct {
 	Attestation *solid.Attestation
 	GossipData  *sentinel.GossipData
+	// ImmediateProcess indicates whether the attestation should be processed immediately or able to be scheduled for later processing.
+	ImmediateProcess bool
 }
 
 func NewAttestationService(
@@ -81,7 +78,7 @@ func NewAttestationService(
 	beaconCfg *clparams.BeaconChainConfig,
 	netCfg *clparams.NetworkConfig,
 	emitters *beaconevents.EventEmitter,
-	sentinel sentinel.SentinelClient,
+	batchSignatureVerifier *BatchSignatureVerifier,
 ) AttestationService {
 	epochDuration := time.Duration(beaconCfg.SlotsPerEpoch*beaconCfg.SecondsPerSlot) * time.Second
 	a := &attestationService{
@@ -93,125 +90,21 @@ func NewAttestationService(
 		beaconCfg:                beaconCfg,
 		netCfg:                   netCfg,
 		emitters:                 emitters,
-		sentinel:                 sentinel,
-		verifyAndExecute:         make(chan *AggregateVerificationData, 128),
+		batchSignatureVerifier:   batchSignatureVerifier,
 		validatorAttestationSeen: lru.NewWithTTL[uint64, uint64]("validator_attestation_seen", validatorAttestationCacheSize, epochDuration),
 		attestationProcessed:     lru.NewWithTTL[[32]byte, struct{}]("attestation_processed", validatorAttestationCacheSize, epochDuration),
 	}
 
-	go a.startAttestationBatchSignatureVerification()
 	go a.loop(ctx)
 	return a
 }
 
-// When receiving AttestationWithGossipData, we simply collect all the signature verification data
-// and verify them together - running all the final functions afterwards
-func (a *attestationService) startAttestationBatchSignatureVerification() {
-	ticker := time.NewTicker(batchCheckInterval)
-	aggregateVerificationData := make([]*AggregateVerificationData, 0, 128)
-	for {
-		select {
-		case verification := <-a.verifyAndExecute:
-			aggregateVerificationData = append(aggregateVerificationData, verification)
-			if len(aggregateVerificationData)*3 > BatchSignatureVerificationThreshold {
-				a.processSignatureVerification(aggregateVerificationData)
-				aggregateVerificationData = make([]*AggregateVerificationData, 0, 128)
-				ticker.Reset(batchCheckInterval)
-			}
-		case <-ticker.C:
-			if len(aggregateVerificationData) != 0 {
-				a.processSignatureVerification(aggregateVerificationData)
-				aggregateVerificationData = make([]*AggregateVerificationData, 0, 128)
-				ticker.Reset(batchCheckInterval)
-			}
-		}
-	}
-}
-
-// processSignatureVerification Runs signature verification for all the signatures altogether, if it
-// succeeds we publish all accumulated gossip data. If verification fails, start verifying each AggregateVerificationData one by
-// one, publish corresponding gossip data if verification succeeds, if not ban the corresponding peer that sent it.
-func (a *attestationService) processSignatureVerification(aggregateVerificationData []*AggregateVerificationData) {
-	signatures, signRoots, pks, fns :=
-		make([][]byte, 0, 128),
-		make([][]byte, 0, 128),
-		make([][]byte, 0, 128),
-		make([]func(), 0, 64)
-
-	for _, v := range aggregateVerificationData {
-		signatures, signRoots, pks, fns =
-			append(signatures, v.Signatures...),
-			append(signRoots, v.SignRoots...),
-			append(pks, v.Pks...),
-			append(fns, v.F)
-	}
-	if err := a.runBatchVerification(signatures, signRoots, pks, fns); err != nil {
-		a.handleIncorrectSignatures(aggregateVerificationData)
-		log.Warn(err.Error())
-		return
-	}
-
-	// Everything went well, run corresponding Fs and send all the gossip data to the network
-	for _, v := range aggregateVerificationData {
-		v.F()
-		if a.sentinel != nil && v.GossipData != nil {
-			if _, err := a.sentinel.PublishGossip(a.ctx, v.GossipData); err != nil {
-				log.Warn("failed publish gossip", "err", err)
-			}
-		}
-	}
-}
-
-// we could locate failing signature with binary search but for now let's choose simplicity over optimisation.
-func (a *attestationService) handleIncorrectSignatures(aggregateVerificationData []*AggregateVerificationData) {
-	for _, v := range aggregateVerificationData {
-		valid, err := blsVerifyMultipleSignatures(v.Signatures, v.SignRoots, v.Pks)
-		if err != nil {
-			log.Warn("attestation_service signature verification failed with the error: " + err.Error())
-			if a.sentinel != nil && v.GossipData != nil && v.GossipData.Peer != nil {
-				a.sentinel.BanPeer(a.ctx, v.GossipData.Peer)
-			}
-			continue
-		}
-
-		if !valid {
-			log.Warn("attestation_service signature verification failed")
-			if a.sentinel != nil && v.GossipData != nil && v.GossipData.Peer != nil {
-				a.sentinel.BanPeer(a.ctx, v.GossipData.Peer)
-			}
-			continue
-		}
-
-		// run corresponding function and publish the gossip into the network
-		v.F()
-
-		if a.sentinel != nil && v.GossipData != nil {
-			if _, err := a.sentinel.PublishGossip(a.ctx, v.GossipData); err != nil {
-				log.Warn("failed publish gossip", "err", err)
-			}
-		}
-	}
-}
-
-func (a *attestationService) runBatchVerification(signatures [][]byte, signRoots [][]byte, pks [][]byte, fns []func()) error {
-	valid, err := blsVerifyMultipleSignatures(signatures, signRoots, pks)
-	if err != nil {
-		return errors.New("attestation_service batch signature verification failed with the error: " + err.Error())
-	}
-
-	if !valid {
-		return errors.New("attestation_service signature verification failed")
-	}
-
-	return nil
-}
-
 func (s *attestationService) ProcessMessage(ctx context.Context, subnet *uint64, att *AttestationWithGossipData) error {
 	var (
-		root           = att.Attestation.AttestantionData().BeaconBlockRoot()
-		slot           = att.Attestation.AttestantionData().Slot()
-		committeeIndex = att.Attestation.AttestantionData().CommitteeIndex()
-		targetEpoch    = att.Attestation.AttestantionData().Target().Epoch()
+		root           = att.Attestation.Data.BeaconBlockRoot
+		slot           = att.Attestation.Data.Slot
+		committeeIndex = att.Attestation.Data.CommitteeIndex
+		targetEpoch    = att.Attestation.Data.Target.Epoch
 	)
 	headState := s.syncedDataManager.HeadStateReader()
 	if headState == nil {
@@ -252,7 +145,7 @@ func (s *attestationService) ProcessMessage(ctx context.Context, subnet *uint64,
 	if err != nil {
 		return err
 	}
-	bits := att.Attestation.AggregationBits()
+	bits := att.Attestation.AggregationBits.Bytes()
 	expectedAggregationBitsLength := len(beaconCommittee)
 	actualAggregationBitsLength := utils.GetBitlistLength(bits)
 	if actualAggregationBitsLength != expectedAggregationBitsLength {
@@ -296,7 +189,7 @@ func (s *attestationService) ProcessMessage(ctx context.Context, subnet *uint64,
 	s.validatorAttestationSeen.Add(vIndex, targetEpoch)
 
 	// [REJECT] The signature of attestation is valid.
-	signature := att.Attestation.Signature()
+	signature := att.Attestation.Signature
 	pubKey, err := headState.ValidatorPublicKey(int(beaconCommittee[onBitIndex]))
 	if err != nil {
 		return fmt.Errorf("unable to get public key: %v", err)
@@ -305,7 +198,7 @@ func (s *attestationService) ProcessMessage(ctx context.Context, subnet *uint64,
 	if err != nil {
 		return fmt.Errorf("unable to get the domain: %v", err)
 	}
-	signingRoot, err := computeSigningRoot(att.Attestation.AttestantionData(), domain)
+	signingRoot, err := computeSigningRoot(att.Attestation.Data, domain)
 	if err != nil {
 		return fmt.Errorf("unable to get signing root: %v", err)
 	}
@@ -320,14 +213,18 @@ func (s *attestationService) ProcessMessage(ctx context.Context, subnet *uint64,
 	// [REJECT] The attestation's target block is an ancestor of the block named in the LMD vote -- i.e.
 	// get_checkpoint_block(store, attestation.data.beacon_block_root, attestation.data.target.epoch) == attestation.data.target.root
 	startSlotAtEpoch := targetEpoch * s.beaconCfg.SlotsPerEpoch
-	if targetBlock := s.forkchoiceStore.Ancestor(root, startSlotAtEpoch); targetBlock != att.Attestation.AttestantionData().Target().BlockRoot() {
-		return fmt.Errorf("invalid target block. root %v targetEpoch %v attTargetBlockRoot %v targetBlock %v", root.Hex(), targetEpoch, att.Attestation.AttestantionData().Target().BlockRoot().Hex(), targetBlock.Hex())
+	if targetBlock := s.forkchoiceStore.Ancestor(root, startSlotAtEpoch); targetBlock != att.Attestation.Data.Target.Root {
+		return fmt.Errorf("invalid target block. root %v targetEpoch %v attTargetBlockRoot %v targetBlock %v", root.Hex(), targetEpoch, att.Attestation.Data.Target.Root.Hex(), targetBlock.Hex())
 	}
 	// [IGNORE] The current finalized_checkpoint is an ancestor of the block defined by attestation.data.beacon_block_root --
 	// i.e. get_checkpoint_block(store, attestation.data.beacon_block_root, store.finalized_checkpoint.epoch) == store.finalized_checkpoint.root
-	startSlotAtEpoch = s.forkchoiceStore.FinalizedCheckpoint().Epoch() * s.beaconCfg.SlotsPerEpoch
-	if s.forkchoiceStore.Ancestor(root, startSlotAtEpoch) != s.forkchoiceStore.FinalizedCheckpoint().BlockRoot() {
+	startSlotAtEpoch = s.forkchoiceStore.FinalizedCheckpoint().Epoch * s.beaconCfg.SlotsPerEpoch
+	if s.forkchoiceStore.Ancestor(root, startSlotAtEpoch) != s.forkchoiceStore.FinalizedCheckpoint().Root {
 		return fmt.Errorf("invalid finalized checkpoint %w", ErrIgnore)
+	}
+
+	if !s.committeeSubscribe.NeedToAggregate(att.Attestation) {
+		return ErrIgnore
 	}
 
 	aggregateVerificationData := &AggregateVerificationData{
@@ -336,7 +233,7 @@ func (s *attestationService) ProcessMessage(ctx context.Context, subnet *uint64,
 		Pks:        [][]byte{pubKey[:]},
 		GossipData: att.GossipData,
 		F: func() {
-			err = s.committeeSubscribe.CheckAggregateAttestation(att.Attestation)
+			err = s.committeeSubscribe.AggregateAttestation(att.Attestation)
 			if errors.Is(err, aggregation.ErrIsSuperset) {
 				return
 			}
@@ -348,12 +245,16 @@ func (s *attestationService) ProcessMessage(ctx context.Context, subnet *uint64,
 		},
 	}
 
+	if att.ImmediateProcess {
+		return s.batchSignatureVerifier.ImmediateVerification(aggregateVerificationData)
+	}
+
 	// push the signatures to verify asynchronously and run final functions after that.
-	s.verifyAndExecute <- aggregateVerificationData
+	s.batchSignatureVerifier.AsyncVerifyAttestation(aggregateVerificationData)
 
 	// As the logic goes, if we return ErrIgnore there will be no peer banning and further publishing
 	// gossip data into the network by the gossip manager. That's what we want because we will be doing that ourselves
-	// in startBatchSignatureVerification function. After validating signatures, if they are valid we will publish the
+	// in BatchSignatureVerifier service. After validating signatures, if they are valid we will publish the
 	// gossip ourselves or ban the peer which sent that particular invalid signature.
 	return ErrIgnore
 }
@@ -393,7 +294,7 @@ func (a *attestationService) loop(ctx context.Context) {
 				return true
 			}
 
-			root := v.att.Attestation.AttestantionData().BeaconBlockRoot()
+			root := v.att.Attestation.Data.BeaconBlockRoot
 			if _, ok := a.forkchoiceStore.GetHeader(root); !ok {
 				return true
 			}
