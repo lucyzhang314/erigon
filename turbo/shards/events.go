@@ -20,9 +20,11 @@ import (
 	"sync"
 
 	"github.com/erigontech/erigon-lib/common"
+	"github.com/erigontech/erigon-lib/common/dbg"
 	"github.com/erigontech/erigon-lib/gointerfaces"
 	remote "github.com/erigontech/erigon-lib/gointerfaces/remoteproto"
 	types2 "github.com/erigontech/erigon-lib/gointerfaces/typesproto"
+	"github.com/erigontech/erigon-lib/log/v3"
 	"github.com/erigontech/erigon/core/types"
 )
 
@@ -123,6 +125,7 @@ func (e *Events) AddPendingBlockSubscription(s PendingBlockSubscription) {
 }
 
 func (e *Events) OnNewSnapshot() {
+	log.Warn("[dbg] sending OnNewSnapshot", "stack", dbg.Stack())
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	for _, ch := range e.newSnapshotSubscription {
