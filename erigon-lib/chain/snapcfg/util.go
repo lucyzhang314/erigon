@@ -446,10 +446,10 @@ func MergeLimitFromCfg(cfg *Cfg, snapType snaptype.Enum, fromBlock uint64) uint6
 
 func MaxSeedableSegment(chain string, dir string) uint64 {
 	var max uint64
-
+	netCfg := KnownCfg(chain)
 	if list, err := snaptype.Segments(dir); err == nil {
 		for _, info := range list {
-			if Seedable(chain, info) && info.Type.Enum() == snaptype.MinCoreEnum && info.To > max {
+			if netCfg.Seedable(info) && info.Type.Enum() == snaptype.MinCoreEnum && info.To > max {
 				max = info.To
 			}
 		}

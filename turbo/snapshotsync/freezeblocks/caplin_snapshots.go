@@ -195,6 +195,8 @@ func (s *CaplinSnapshots) ReopenList(fileNames []string, optimistic bool) error 
 	s.closeWhatNotInList(fileNames)
 	var segmentsMax uint64
 	var segmentsMaxSet bool
+
+	netCfg := snapcfg.KnownCfg(s.cfg.ChainName)
 Loop:
 	for _, fName := range fileNames {
 		f, _, ok := snaptype.ParseFileName(s.dir, fName)
@@ -224,7 +226,7 @@ Loop:
 					segType: snaptype.BeaconBlocks,
 					version: f.Version,
 					Range:   Range{f.From, f.To},
-					frozen:  snapcfg.Seedable(s.cfg.ChainName, f),
+					frozen:  netCfg.Seedable(f),
 				}
 			}
 			if err := sn.reopenSeg(s.dir); err != nil {
@@ -281,7 +283,7 @@ Loop:
 					segType: snaptype.BlobSidecars,
 					version: f.Version,
 					Range:   Range{f.From, f.To},
-					frozen:  snapcfg.Seedable(s.cfg.ChainName, f),
+					frozen:  netCfg.Seedable(f),
 				}
 			}
 			if err := sn.reopenSeg(s.dir); err != nil {

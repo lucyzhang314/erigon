@@ -85,6 +85,7 @@ func seedableSegmentFiles(dir string, chainName string, skipSeedableCheck bool) 
 		return nil, err
 	}
 
+	netCfg := snapcfg.KnownCfg(chainName)
 	res := make([]string, 0, len(files))
 	for _, fPath := range files {
 
@@ -96,7 +97,7 @@ func seedableSegmentFiles(dir string, chainName string, skipSeedableCheck bool) 
 		if !skipSeedableCheck && (!ok || isStateFile) {
 			continue
 		}
-		if !skipSeedableCheck && !snapcfg.Seedable(chainName, ff) {
+		if !skipSeedableCheck && !netCfg.Seedable(ff) {
 			continue
 		}
 		res = append(res, name)
