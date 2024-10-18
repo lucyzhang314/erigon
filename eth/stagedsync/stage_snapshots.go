@@ -336,6 +336,10 @@ func DownloadAndIndexSnapshotsIfNeed(s *StageState, ctx context.Context, tx kv.R
 	if casted, ok := tx.(*temporal.Tx); ok {
 		casted.ForceReopenAggCtx() // otherwise next stages will not see just-indexed-files
 	}
+	if cfg.notifier.Events != nil {
+		cfg.notifier.Events.OnNewSnapshot()
+	}
+
 	log.Warn("[dbg] reopen3 done. fill from db. notification not sent here")
 
 	{
