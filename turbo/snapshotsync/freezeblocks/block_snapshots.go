@@ -373,7 +373,7 @@ func (s *DirtySegment) reopenIdx(dir string) (err error) {
 			return fmt.Errorf("%w, fileName: %s", err, fileName)
 		}
 
-		s.indexes = append(s.indexes, index)
+		s.indexes[i] = index
 	}
 
 	return nil
