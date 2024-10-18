@@ -443,6 +443,7 @@ func RemoteServices(ctx context.Context, cfg *httpcfg.HttpCfg, logger log.Logger
 		}
 
 		onNewSnapshot = func() {
+			log.Warn("[dbg] recv onNewSnapshot")
 			go func() { // don't block events processing by network communication
 				reply, err := remoteKvClient.Snapshots(ctx, &remote.SnapshotsRequest{}, grpc.WaitForReady(true))
 				if err != nil {
