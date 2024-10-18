@@ -446,7 +446,6 @@ func RemoteServices(ctx context.Context, cfg *httpcfg.HttpCfg, logger log.Logger
 		wg := errgroup.Group{}
 		wg.SetLimit(1)
 		onNewSnapshot = func() {
-			log.Warn("[dbg] recv onNewSnapshot")
 			wg.Go(func() error { // don't block events processing by network communication
 				reply, err := remoteKvClient.Snapshots(ctx, &remote.SnapshotsRequest{}, grpc.WaitForReady(true))
 				if err != nil {
