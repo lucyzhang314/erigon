@@ -116,7 +116,7 @@ func (s Segment) FileInfo(dir string) snaptype.FileInfo {
 
 func (s *Segment) reopenSeg(dir string) (err error) {
 	if s.Decompressor != nil {
-		return err
+		return nil
 	}
 	s.Decompressor, err = seg.NewDecompressor(filepath.Join(dir, s.FileName()))
 	if err != nil {
@@ -162,7 +162,7 @@ func (s *Segment) openFiles() []string {
 }
 
 func (s *Segment) reopenIdxIfNeed(dir string, optimistic bool) (err error) {
-	err = s.reopenIdx(dir)
+	err := s.reopenIdx(dir)
 
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
