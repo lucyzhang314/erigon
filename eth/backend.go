@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"math"
 	"math/big"
 	"net"
