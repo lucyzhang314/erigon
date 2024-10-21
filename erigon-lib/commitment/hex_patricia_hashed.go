@@ -1529,8 +1529,12 @@ func (hph *HexPatriciaHashed) Process(ctx context.Context, updates *Updates, log
 	)
 	defer logEvery.Stop()
 	//hph.trace = true
-
+	xa := time.Duration(0)
 	err = updates.HashSort(ctx, func(hashedKey, plainKey []byte, stateUpdate *Update) error {
+		s := time.Now()
+		defer func() {
+			xa += time.Since(s)
+		}()
 		select {
 		case <-logEvery.C:
 			dbg.ReadMemStats(&m)
@@ -1587,6 +1591,7 @@ func (hph *HexPatriciaHashed) Process(ctx context.Context, updates *Updates, log
 	if err != nil {
 		return nil, fmt.Errorf("hash sort failed: %w", err)
 	}
+	fmt.Println("hash sort done", time.Since(start), "extra", xa)
 
 	// Folding everything up to the root
 	for hph.activeRows > 0 {
