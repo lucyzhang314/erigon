@@ -1643,6 +1643,7 @@ func (hph *HexPatriciaHashed) Process(ctx context.Context, updates *Updates, log
 	}
 	fmt.Println("hash sort done", time.Since(start), "total", xa, "unfold", ba, "state_update_NIL", da, "state_update", ca, "update", ua, "fold", fa, "unfold_branch", TEST_TIME, "cnt", tc.Load())
 	getTop10StoredKeys()
+	tc.Store(0)
 	TEST_TIME = 0
 
 	// Folding everything up to the root
