@@ -30,6 +30,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -972,6 +973,31 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 	return unfolding
 }
 
+var storeKeys sync.Map
+
+func getTop10StoredKeys() {
+	var topKeys []struct {
+		key   string
+		count int
+	}
+	storeKeys.Range(func(key, value interface{}) bool {
+		topKeys = append(topKeys, struct {
+			key   string
+			count int
+		}{key: key.(string), count: value.(int)})
+		return true
+	})
+	sort.Slice(topKeys, func(i, j int) bool {
+		return topKeys[i].count > topKeys[j].count
+	})
+	// now print top 30 keys
+	var tops []string
+	for i := 0; i < 100 && i < len(topKeys); i++ {
+		tops = append(tops, fmt.Sprintf("%s: %d", topKeys[i].key, topKeys[i].count))
+	}
+	fmt.Println(strings.Join(tops, " | "))
+}
+
 // unfoldBranchNode returns true if unfolding has been done
 func (hph *HexPatriciaHashed) unfoldBranchNode(row, depth int, deleted bool) (bool, error) {
 	key := hexToCompact(hph.currentKey[:hph.currentKeyLen])
@@ -979,6 +1005,11 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row, depth int, deleted bool) (bo
 	if err != nil {
 		return false, err
 	}
+	if _, ok := storeKeys.Load(key); !ok {
+		storeKeys.Store(string(key), 0)
+	}
+	sa, _ := storeKeys.Load(key)
+	storeKeys.Store(string(key), sa.(int)+1)
 	hph.depthsToTxNum[depth] = fileEndTxNum
 	if len(branchData) >= 2 {
 		branchData = branchData[2:] // skip touch map and keep the rest
@@ -1609,6 +1640,7 @@ func (hph *HexPatriciaHashed) Process(ctx context.Context, updates *Updates, log
 		return nil, fmt.Errorf("hash sort failed: %w", err)
 	}
 	fmt.Println("hash sort done", time.Since(start), "total", xa, "unfold", ba, "state_update_NIL", da, "state_update", ca, "update", ua, "fold", fa, "unfold_branch", TEST_TIME)
+	getTop10StoredKeys()
 	TEST_TIME = 0
 
 	// Folding everything up to the root
