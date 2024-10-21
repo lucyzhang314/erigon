@@ -1604,7 +1604,7 @@ func (hph *HexPatriciaHashed) Process(ctx context.Context, updates *Updates, log
 	if err != nil {
 		return nil, fmt.Errorf("hash sort failed: %w", err)
 	}
-	fmt.Println("hash sort done", time.Since(start), "total", xa, "unfold", ba, "state_update_NIL", da, "state_update", ca, "update", ua)
+	fmt.Println("hash sort done", time.Since(start), "total", xa, "unfold", ba, "state_update_NIL", da, "state_update", ca, "update", ua, "fold", fa)
 
 	// Folding everything up to the root
 	for hph.activeRows > 0 {
