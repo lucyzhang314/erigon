@@ -991,13 +991,20 @@ func getTop10StoredKeys() {
 	sort.Slice(topKeys, func(i, j int) bool {
 		return topKeys[i].count > topKeys[j].count
 	})
-	// now print top 30 keys
-	var tops []string
-	for i := 0; i < len(topKeys); i++ {
-		tops = append(tops, fmt.Sprintf("%x: %d", topKeys[i].key, topKeys[i].count))
+	// ok now count the  re-occuring of topKeys.count like if say how many keys have count =1, count =2, count =3 etc
+	counts := make(map[int]int)
+	for _, k := range topKeys {
+		counts[k.count]++
 	}
-	fmt.Println("l", topKeys)
-	fmt.Println(strings.Join(tops, " \n"))
+	// sort the counts
+	var keys []int
+	for k := range counts {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	for _, k := range keys {
+		fmt.Printf("count %d: %d\n", k, counts[k])
+	}
 }
 
 // unfoldBranchNode returns true if unfolding has been done
