@@ -1530,6 +1530,11 @@ func (hph *HexPatriciaHashed) Process(ctx context.Context, updates *Updates, log
 	defer logEvery.Stop()
 	//hph.trace = true
 	xa := time.Duration(0)
+	ba := time.Duration(0)
+	ca := time.Duration(0)
+	da := time.Duration(0)
+	ua := time.Duration(0)
+	fa := time.Duration(0)
 	err = updates.HashSort(ctx, func(hashedKey, plainKey []byte, stateUpdate *Update) error {
 		s := time.Now()
 		defer func() {
@@ -1554,14 +1559,18 @@ func (hph *HexPatriciaHashed) Process(ctx context.Context, updates *Updates, log
 				return fmt.Errorf("fold: %w", err)
 			}
 		}
+		fa += time.Since(s)
+		sba := time.Now()
 		// Now unfold until we step on an empty cell
 		for unfolding := hph.needUnfolding(hashedKey); unfolding > 0; unfolding = hph.needUnfolding(hashedKey) {
 			if err := hph.unfold(hashedKey, unfolding); err != nil {
 				return fmt.Errorf("unfold: %w", err)
 			}
 		}
+		ba += time.Since(sba)
 
 		if stateUpdate == nil {
+			p := time.Now()
 			// Update the cell
 			if len(plainKey) == hph.accountKeyLen {
 				update, err = hph.ctx.Account(plainKey)
@@ -1574,16 +1583,20 @@ func (hph *HexPatriciaHashed) Process(ctx context.Context, updates *Updates, log
 					return fmt.Errorf("GetStorage for key %x failed: %w", plainKey, err)
 				}
 			}
+			da += time.Since(p)
 		} else {
+			p := time.Now()
 			if update == nil {
 				update = stateUpdate
 			} else {
 				update.Reset()
 				update.Merge(stateUpdate)
 			}
+			ca += time.Since(p)
 		}
+		v := time.Now()
 		hph.updateCell(plainKey, hashedKey, update)
-
+		ua += time.Since(v)
 		mxTrieProcessedKeys.Inc()
 		ki++
 		return nil
@@ -1591,7 +1604,7 @@ func (hph *HexPatriciaHashed) Process(ctx context.Context, updates *Updates, log
 	if err != nil {
 		return nil, fmt.Errorf("hash sort failed: %w", err)
 	}
-	fmt.Println("hash sort done", time.Since(start), "extra", xa)
+	fmt.Println("hash sort done", time.Since(start), "total", xa, "unfold", ba, "state_update_NIL", da, "state_update", ca, "update", ua)
 
 	// Folding everything up to the root
 	for hph.activeRows > 0 {
