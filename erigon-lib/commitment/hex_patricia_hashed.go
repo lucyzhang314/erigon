@@ -974,6 +974,7 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 }
 
 var storeKeys sync.Map
+var tc atomic.Int64
 
 func getTop10StoredKeys() {
 	var topKeys []struct {
@@ -995,7 +996,7 @@ func getTop10StoredKeys() {
 	for i := 0; i < 100 && i < len(topKeys); i++ {
 		tops = append(tops, fmt.Sprintf("%x: %d", topKeys[i].key, topKeys[i].count))
 	}
-	fmt.Println(strings.Join(tops, " | "))
+	fmt.Println(strings.Join(tops, " \n"))
 }
 
 // unfoldBranchNode returns true if unfolding has been done
@@ -1008,6 +1009,7 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row, depth int, deleted bool) (bo
 	if _, ok := storeKeys.Load(string(key)); !ok {
 		storeKeys.Store(string(key), 0)
 	}
+	tc.Add(1)
 	sa, _ := storeKeys.Load(string(key))
 	storeKeys.Store(string(key), sa.(int)+1)
 	hph.depthsToTxNum[depth] = fileEndTxNum
@@ -1639,7 +1641,7 @@ func (hph *HexPatriciaHashed) Process(ctx context.Context, updates *Updates, log
 	if err != nil {
 		return nil, fmt.Errorf("hash sort failed: %w", err)
 	}
-	fmt.Println("hash sort done", time.Since(start), "total", xa, "unfold", ba, "state_update_NIL", da, "state_update", ca, "update", ua, "fold", fa, "unfold_branch", TEST_TIME)
+	fmt.Println("hash sort done", time.Since(start), "total", xa, "unfold", ba, "state_update_NIL", da, "state_update", ca, "update", ua, "fold", fa, "unfold_branch", TEST_TIME, "cnt", tc.Load())
 	getTop10StoredKeys()
 	TEST_TIME = 0
 
