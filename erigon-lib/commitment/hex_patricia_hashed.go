@@ -1030,6 +1030,8 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row, depth int, deleted bool) (bo
 	return true, nil
 }
 
+var TEST_TIME time.Duration
+
 func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 	if hph.trace {
 		fmt.Printf("unfold %d: activeRows: %d\n", unfolding, hph.activeRows)
@@ -1069,10 +1071,12 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 
 	if upCell.hashedExtLen == 0 {
 		depth = upDepth + 1
+		s := time.Now()
 		unfolded, err := hph.unfoldBranchNode(row, depth, touched && !present)
 		if err != nil {
 			return err
 		}
+		TEST_TIME += time.Since(s)
 		if unfolded {
 			hph.depths[hph.activeRows] = depth
 			hph.activeRows++
@@ -1604,7 +1608,8 @@ func (hph *HexPatriciaHashed) Process(ctx context.Context, updates *Updates, log
 	if err != nil {
 		return nil, fmt.Errorf("hash sort failed: %w", err)
 	}
-	fmt.Println("hash sort done", time.Since(start), "total", xa, "unfold", ba, "state_update_NIL", da, "state_update", ca, "update", ua, "fold", fa)
+	fmt.Println("hash sort done", time.Since(start), "total", xa, "unfold", ba, "state_update_NIL", da, "state_update", ca, "update", ua, "fold", fa, "unfold_branch", TEST_TIME)
+	TEST_TIME = 0
 
 	// Folding everything up to the root
 	for hph.activeRows > 0 {
