@@ -1005,10 +1005,10 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row, depth int, deleted bool) (bo
 	if err != nil {
 		return false, err
 	}
-	if _, ok := storeKeys.Load(key); !ok {
+	if _, ok := storeKeys.Load(string(key)); !ok {
 		storeKeys.Store(string(key), 0)
 	}
-	sa, _ := storeKeys.Load(key)
+	sa, _ := storeKeys.Load(string(key))
 	storeKeys.Store(string(key), sa.(int)+1)
 	hph.depthsToTxNum[depth] = fileEndTxNum
 	if len(branchData) >= 2 {
