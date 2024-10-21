@@ -993,7 +993,7 @@ func getTop10StoredKeys() {
 	// now print top 30 keys
 	var tops []string
 	for i := 0; i < 100 && i < len(topKeys); i++ {
-		tops = append(tops, fmt.Sprintf("%s: %d", topKeys[i].key, topKeys[i].count))
+		tops = append(tops, fmt.Sprintf("%x: %d", topKeys[i].key, topKeys[i].count))
 	}
 	fmt.Println(strings.Join(tops, " | "))
 }
