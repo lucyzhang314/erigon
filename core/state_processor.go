@@ -20,6 +20,8 @@
 package core
 
 import (
+	"fmt"
+
 	"github.com/erigontech/erigon-lib/chain"
 	libcommon "github.com/erigontech/erigon-lib/common"
 
@@ -47,12 +49,14 @@ func applyTransaction(config *chain.Config, engine consensus.EngineReader, gp *G
 	msg.SetCheckNonce(!cfg.StatelessExec)
 
 	if msg.FeeCap().IsZero() && engine != nil {
+		fmt.Printf("[dbg] 1\n")
 		// Only zero-gas transactions may be service ones
 		syscall := func(contract libcommon.Address, data []byte) ([]byte, error) {
 			return SysCallContract(contract, data, config, ibs, header, engine, true /* constCall */)
 		}
 		msg.SetIsFree(engine.IsServiceTransaction(msg.From(), syscall))
 	}
+	fmt.Printf("[dbg] 2\n")
 
 	txContext := NewEVMTxContext(msg)
 	if cfg.TraceJumpDest {
