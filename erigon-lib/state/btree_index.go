@@ -930,10 +930,17 @@ func (b *BtIndex) keyCmp(k []byte, di uint64, g *seg.Reader, resBuf []byte) (int
 		return 0, nil, fmt.Errorf("key at %d/%d not found, file: %s", di, b.ef.Count(), b.FileName())
 	}
 
-	resBuf, _ = g.Next(resBuf)
-
-	//TODO: use `b.getter.Match` after https://github.com/erigontech/erigon/issues/7855
-	return bytes.Compare(resBuf, k), resBuf, nil
+	compare := g.MatchCmp(k)
+	if compare == 0 {
+		g.Reset(offset)
+		resBuf, _ = g.Next(resBuf)
+		return 0, resBuf, nil
+	}
+	return compare, resBuf[:0], nil
+	//resBuf, _ = g.Next(resBuf)
+	//
+	////TODO: use `b.getter.Match` after https://github.com/erigontech/erigon/issues/7855
+	//return bytes.Compare(resBuf, k), resBuf, nil
 	//return b.getter.Match(k), result, nil
 }
 
