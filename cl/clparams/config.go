@@ -982,6 +982,19 @@ func (b *BeaconChainConfig) GetMinSlashingPenaltyQuotient(version StateVersion) 
 	}
 }
 
+func (b *BeaconChainConfig) GetProportionalSlashingMultiplier(version StateVersion) uint64 {
+	switch version {
+	case Phase0Version:
+		return b.ProportionalSlashingMultiplier
+	case AltairVersion:
+		return b.ProportionalSlashingMultiplierAltair
+	case BellatrixVersion, CapellaVersion, DenebVersion, ElectraVersion:
+		return b.ProportionalSlashingMultiplierBellatrix
+	default:
+		panic("not implemented")
+	}
+}
+
 func (b *BeaconChainConfig) GetPenaltyQuotient(version StateVersion) uint64 {
 	switch version {
 	case Phase0Version:
@@ -1040,6 +1053,7 @@ func (b *BeaconChainConfig) MaxEffectiveBalanceForVersion(version StateVersion) 
 		panic("invalid version")
 	}
 }
+
 func (b *BeaconChainConfig) GetForkVersionByVersion(v StateVersion) uint32 {
 	switch v {
 	case Phase0Version:
