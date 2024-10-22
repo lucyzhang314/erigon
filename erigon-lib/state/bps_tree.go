@@ -298,6 +298,7 @@ func (b *BpsTree) Seek(g *seg.Reader, seekKey []byte) (key, value []byte, di uin
 
 	n, l, r := b.bs(seekKey) // l===r when key is found
 	if b.trace {
+		//key, _, _, _ := b.dataLookupFunc(l, g)
 		fmt.Printf("pivot di:%d di(LR): [%d %d] k: %x found: %t\n", n.di, l, r, n.key, l == r)
 		defer func() { fmt.Printf("found=%t %x [%d %d]\n", bytes.Equal(key, seekKey), seekKey, l, r) }()
 	}
@@ -310,7 +311,8 @@ func (b *BpsTree) Seek(g *seg.Reader, seekKey []byte) (key, value []byte, di uin
 				return nil, nil, 0, false, err
 			}
 			if b.trace {
-				fmt.Printf("fs di:[%d %d] k: %x\n", l, r, key)
+				key, _, _, _ := b.dataLookupFunc(l, g)
+				fmt.Printf("fs di=%d LR[%d %d] k: %x\n", l, l, r, key)
 			}
 			//fmt.Printf("N %d l %d cmp %d (found %x want %x)\n", b.offt.Count(), l, cmp, key, seekKey)
 			if cmp == 0 {
@@ -332,7 +334,8 @@ func (b *BpsTree) Seek(g *seg.Reader, seekKey []byte) (key, value []byte, di uin
 			return nil, nil, 0, false, err
 		}
 		if b.trace {
-			fmt.Printf("fs di:[%d %d] k: %x\n", l, r, key)
+			key, _, _, _ := b.dataLookupFunc(m, g)
+			fmt.Printf("fs di=%d LR[%d %d] k: %x\n", m, l, r, key)
 		}
 
 		if cmp == 0 {
@@ -359,7 +362,7 @@ func (b *BpsTree) Seek(g *seg.Reader, seekKey []byte) (key, value []byte, di uin
 // returns first key which is >= key.
 // If key is nil, returns first key
 // if key is greater than all keys, returns nil
-func (b *BpsTree) Get(g *seg.Reader, key []byte) (k []byte, ok bool, i uint64, err error) {
+func (b *BpsTree) Get(g *seg.Reader, key []byte) (v []byte, ok bool, i uint64, err error) {
 	if b.trace {
 		fmt.Printf("get   %x\n", key)
 	}
@@ -378,6 +381,7 @@ func (b *BpsTree) Get(g *seg.Reader, key []byte) (k []byte, ok bool, i uint64, e
 
 	var cmp int
 	var m uint64
+	var k []byte
 	for l < r {
 		m = (l + r) >> 1
 		cmp, k, err = b.keyCmpFunc(key, m, g, k[:0])
@@ -390,7 +394,8 @@ func (b *BpsTree) Get(g *seg.Reader, key []byte) (k []byte, ok bool, i uint64, e
 
 		switch cmp {
 		case 0:
-			return k, true, m, nil
+			k, v, _, err = b.dataLookupFunc(m, g)
+			return v, true, m, nil
 		case 1:
 			r = m
 		case -1:
@@ -398,11 +403,12 @@ func (b *BpsTree) Get(g *seg.Reader, key []byte) (k []byte, ok bool, i uint64, e
 		}
 	}
 
-	cmp, k, err = b.keyCmpFunc(key, l, g, k[:0])
-	if err != nil || cmp != 0 {
+	//cmp, k, err = b.keyCmpFunc(key, l, g, k[:0])
+	k, v, _, err = b.dataLookupFunc(l, g)
+	if err != nil || !bytes.Equal(k, key) {
 		return nil, false, 0, err
 	}
-	return k, true, l, nil
+	return v, true, l, nil
 }
 
 func (b *BpsTree) Offsets() *eliasfano32.EliasFano { return b.offt }

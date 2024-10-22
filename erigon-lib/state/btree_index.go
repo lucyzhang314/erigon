@@ -931,11 +931,16 @@ func (b *BtIndex) keyCmp(k []byte, di uint64, g *seg.Reader, resBuf []byte) (int
 	}
 
 	compare := g.MatchCmp(k)
-	if compare == 0 {
-		g.Reset(offset)
-		resBuf, _ = g.Next(resBuf)
-		return 0, resBuf, nil
+	if compare == 1 {
+		return -1, nil, nil
+	} else if compare == -1 {
+		return 1, nil, nil
 	}
+	//if compare == 0 {
+	//g.Reset(offset)
+	//resBuf, _ = g.Next(resBuf)
+	//return 0, resBuf, nil
+	//}
 	return compare, nil, nil
 	//resBuf, _ = g.Next(resBuf)
 	//
@@ -1021,7 +1026,14 @@ func (b *BtIndex) Get(lookup []byte, gr *seg.Reader) (k, v []byte, offsetInFile 
 		// since fetching k and v from data file is required to use Getter.
 		// Why to do Getter.Reset twice when we can get kv right there.
 
-		k, found, index, err = b.bplus.Get(gr, lookup)
+		v, found, index, err = b.bplus.Get(gr, lookup)
+		if err != nil || !found {
+			if errors.Is(err, ErrBtIndexLookupBounds) {
+				return k, v, offsetInFile, false, nil
+			}
+			return nil, nil, 0, false, err
+		}
+		return lookup, v, index, true, nil
 	} else {
 		if b.alloc == nil {
 			return k, v, 0, false, err
