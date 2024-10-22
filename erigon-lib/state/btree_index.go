@@ -936,7 +936,7 @@ func (b *BtIndex) keyCmp(k []byte, di uint64, g *seg.Reader, resBuf []byte) (int
 		resBuf, _ = g.Next(resBuf)
 		return 0, resBuf, nil
 	}
-	return compare, resBuf[:0], nil
+	return compare, nil, nil
 	//resBuf, _ = g.Next(resBuf)
 	//
 	////TODO: use `b.getter.Match` after https://github.com/erigontech/erigon/issues/7855
