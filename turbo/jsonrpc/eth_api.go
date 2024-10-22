@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -147,6 +148,7 @@ type BaseAPI struct {
 }
 
 func NewBaseApi(f *rpchelper.Filters, stateCache kvcache.Cache, blockReader services.FullBlockReader, singleNodeMode bool, evmCallTimeout time.Duration, engine consensus.EngineReader, dirs datadir.Dirs, bridgeReader bridgeReader) *BaseAPI {
+	fmt.Printf("[dbg] startup engine: %T\n", engine)
 	var (
 		blocksLRUSize      = 128 // ~32Mb
 		receiptsCacheLimit = 32
