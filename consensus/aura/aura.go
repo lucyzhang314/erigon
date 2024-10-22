@@ -1001,6 +1001,7 @@ func (c *AuRa) IsServiceTransaction(sender libcommon.Address, syscall consensus.
 	c.certifierLock.RLock()
 	defer c.certifierLock.RUnlock()
 	if c.certifier == nil {
+		fmt.Printf("[dbg] 3.1\n")
 		return false
 	}
 	packed, err := certifierAbi().Pack("certified", sender)
@@ -1014,12 +1015,15 @@ func (c *AuRa) IsServiceTransaction(sender libcommon.Address, syscall consensus.
 	res, err := certifierAbi().Unpack("certified", out)
 	if err != nil {
 		log.Warn("error while detecting service txn on AuRa", "err", err)
+		fmt.Printf("[dbg] 3.2\n")
 		return false
 	}
 	if len(res) == 0 {
+		fmt.Printf("[dbg] 3.3\n")
 		return false
 	}
 	if certified, ok := res[0].(bool); ok {
+		fmt.Printf("[dbg] 3.4\n")
 		return certified
 	}
 	return false
