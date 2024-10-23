@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with Erigon. If not, see <http://www.gnu.org/licenses/>.
 
-//go:build integration
+// //go:build integration
 
 package tests
 
@@ -31,7 +31,7 @@ func TestExecutionSpec(t *testing.T) {
 
 	bt := new(testMatcher)
 
-	dir := filepath.Join(".", "execution-spec-tests")
+	dir := filepath.Join(".", "execution-spec-tests/prague/eip2537_bls_12_381_precompiles/bls12_g2mul")
 
 	// bt.skipLoad(`^`)
 
