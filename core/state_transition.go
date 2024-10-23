@@ -199,8 +199,7 @@ func (st *StateTransition) buyGas(gasBailout bool) error {
 	if overflow {
 		return fmt.Errorf("%w: address %v", ErrInsufficientFunds, st.msg.From().Hex())
 	}
-	expected := st.state.GetBalance(st.msg.From())
-	fmt.Printf("--- gasVal: %v, expected: %v\n", gasVal, expected)
+
 	// compute blob fee for eip-4844 data blobs if any
 	blobGasVal := new(uint256.Int)
 	if st.evm.ChainRules().IsCancun {
@@ -244,6 +243,7 @@ func (st *StateTransition) buyGas(gasBailout bool) error {
 			}
 		}
 		if have, want := st.state.GetBalance(st.msg.From()), balanceCheck; have.Cmp(want) < 0 {
+			fmt.Printf("---- balanceCheck: %v\n", balanceCheck)
 			return fmt.Errorf("%w: address %v have %v want %v", ErrInsufficientFunds, st.msg.From().Hex(), have, want)
 		}
 		st.state.SubBalance(st.msg.From(), gasVal)
