@@ -1296,6 +1296,7 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 			fmt.Printf("---- balance from state: %v\n", balance)
 			fmt.Printf("---- feecap: %v\n", msg.FeeCap())
 			execResult, err = core.ApplyMessage(evm, msg, gp, true /* refunds */, gasBailout /* gasBailout */)
+			fmt.Println("---- err: ", err)
 		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("first run for txIndex %d error: %w", txIndex, err)
