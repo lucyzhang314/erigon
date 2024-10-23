@@ -172,6 +172,7 @@ func (api *TraceAPIImpl) Block(ctx context.Context, blockNr rpc.BlockNumber, gas
 	}
 	defer tx.Rollback()
 	blockNum, hash, _, err := rpchelper.GetBlockNumber(rpc.BlockNumberOrHashWithNumber(blockNr), tx, api.filters)
+	fmt.Printf("---------> block_num: %v, hash: %v\n", blockNum, hash)
 	if err != nil {
 		return nil, err
 	}
