@@ -954,6 +954,7 @@ func (api *TraceAPIImpl) callManyTransactions(
 
 	msgs := make([]types.Message, len(txs))
 	for i, tx := range txs {
+		fmt.Println("---- tx.Type: ", tx.Type())
 		isBorStateSyncTxn := tx == borStateSyncTxn
 		var txnHash common.Hash
 		var msg types.Message

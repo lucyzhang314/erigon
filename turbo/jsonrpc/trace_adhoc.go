@@ -1196,7 +1196,7 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 	}
 
 	blockCtx := transactions.NewEVMBlockContext(engine, header, parentNrOrHash.RequireCanonical, dbtx, api._blockReader)
-
+	fmt.Println("isCancun: ", chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Time).IsCancun)
 	for txIndex, msg := range msgs {
 		fmt.Println("---- txIndex: ", txIndex)
 		if err := libcommon.Stopped(ctx.Done()); err != nil {
@@ -1294,6 +1294,7 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 			gp := new(core.GasPool).AddGas(msg.Gas()).AddBlobGas(msg.BlobGas())
 			balance := ibs.GetBalance(msg.From())
 			fmt.Printf("---- balance from state: %v\n", balance)
+			fmt.Println("---- feecap: %v\n", msg.FeeCap())
 			execResult, err = core.ApplyMessage(evm, msg, gp, true /* refunds */, gasBailout /* gasBailout */)
 		}
 		if err != nil {
