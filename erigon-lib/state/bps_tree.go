@@ -237,7 +237,8 @@ func (b *BpsTree) WarmUp(kv *seg.Reader) (err error) {
 	var key []byte
 	for i := step; i < N; i += step {
 		di := i - 1
-		_, key, err = b.keyCmpFunc(nil, di, kv, key[:0])
+		// _, key, err = b.keyCmpFunc(nil, di, kv, key[:0])
+		key, _, _, err = b.dataLookupFunc(di, kv)
 		if err != nil {
 			return err
 		}
@@ -304,29 +305,10 @@ func (b *BpsTree) Seek(g *seg.Reader, seekKey []byte) (key, value []byte, di uin
 	var m uint64
 	var cmp int
 	for l < r {
-		if r-l <= DefaultBtreeStartSkip { // found small range, faster to scan now
-			cmp, key, err = b.keyCmpFunc(seekKey, l, g, key[:0])
-			if err != nil {
-				return nil, nil, 0, false, err
-			}
-			if b.trace {
-				fmt.Printf("fs di:[%d %d] k: %x\n", l, r, key)
-			}
-			//fmt.Printf("N %d l %d cmp %d (found %x want %x)\n", b.offt.Count(), l, cmp, key, seekKey)
-			if cmp == 0 {
-				r = l
-				break
-			} else if cmp < 0 { //found key is greater than seekKey
-				if l+1 < b.offt.Count() {
-					l++
-					continue
-				}
-			}
-			r = l
-			break
-		}
-
 		m = (l + r) >> 1
+		if r-l <= DefaultBtreeStartSkip { // found small range, faster to scan now
+			m = l
+		}
 		cmp, key, err = b.keyCmpFunc(seekKey, m, g, key[:0])
 		if err != nil {
 			return nil, nil, 0, false, err
@@ -346,10 +328,7 @@ func (b *BpsTree) Seek(g *seg.Reader, seekKey []byte) (key, value []byte, di uin
 
 	}
 
-	if l == r {
-		m = l
-	}
-	key, value, _, err = b.dataLookupFunc(m, g)
+	key, value, _, err = b.dataLookupFunc(l, g)
 	if err != nil {
 		return nil, nil, 0, false, err
 	}

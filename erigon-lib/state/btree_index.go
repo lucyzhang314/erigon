@@ -919,7 +919,7 @@ func (b *BtIndex) dataLookup(di uint64, g *seg.Reader) (k, v []byte, offset uint
 }
 
 // comparing `k` with item of index `di`. using buffer `kBuf` to avoid allocations
-func (b *BtIndex) keyCmp(k []byte, di uint64, g *seg.Reader, resBuf []byte) (int, []byte, error) {
+func (b *BtIndex) keyCmp(k []byte, di uint64, g *seg.Reader, _ []byte) (int, []byte, error) {
 	if di >= b.ef.Count() {
 		return 0, nil, fmt.Errorf("%w: keyCount=%d, but key %d requested. file: %s", ErrBtIndexLookupBounds, b.ef.Count(), di+1, b.FileName())
 	}
@@ -931,12 +931,12 @@ func (b *BtIndex) keyCmp(k []byte, di uint64, g *seg.Reader, resBuf []byte) (int
 	}
 
 	compare := g.MatchCmp(k)
-	if compare == 0 {
-		g.Reset(offset)
-		resBuf, _ = g.Next(resBuf)
-		return 0, resBuf, nil
-	}
-	return compare, resBuf[:0], nil
+	// if compare == 0 {
+	// 	// g.Reset(offset)
+	// 	resBuf, _ = g.Next(resBuf[:0])
+	// 	return 0, resBuf, nil
+	// }
+	return compare, nil, nil
 	//resBuf, _ = g.Next(resBuf)
 	//
 	////TODO: use `b.getter.Match` after https://github.com/erigontech/erigon/issues/7855
@@ -1021,7 +1021,23 @@ func (b *BtIndex) Get(lookup []byte, gr *seg.Reader) (k, v []byte, offsetInFile 
 		// since fetching k and v from data file is required to use Getter.
 		// Why to do Getter.Reset twice when we can get kv right there.
 
-		k, found, index, err = b.bplus.Get(gr, lookup)
+		_, found, index, err = b.bplus.Get(gr, lookup)
+		if err != nil || !found {
+			if errors.Is(err, ErrBtIndexLookupBounds) {
+				return k, v, offsetInFile, false, nil
+			}
+			return nil, nil, 0, false, err
+		}
+		k, v, offsetInFile, err = b.dataLookup(index, gr)
+		if err != nil {
+			if errors.Is(err, ErrBtIndexLookupBounds) {
+				// err = nil
+				return k, v, offsetInFile, false, nil
+			}
+			// return nil, nil, 0, false, err
+			return k, v, offsetInFile, false, err
+		}
+		return k, v, offsetInFile, true, nil
 	} else {
 		if b.alloc == nil {
 			return k, v, 0, false, err

@@ -14,7 +14,7 @@ import (
 func BenchmarkBpsTreeSeek(t *testing.B) {
 	tmp := t.TempDir()
 	logger := log.New()
-	keyCount, M := 12_000_000, 256
+	keyCount, M := 12_000_00, 256
 	t.Logf("N: %d, M: %d skip since shard <= %d", keyCount, M, DefaultBtreeStartSkip)
 	compressFlags := seg.CompressKeys | seg.CompressVals
 
