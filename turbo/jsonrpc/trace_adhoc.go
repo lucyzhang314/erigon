@@ -1263,7 +1263,7 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 			finalizeTxStateWriter = noop
 		}
 
-		ibs.Reset()
+		// ibs.Reset()
 
 		var txFinalized bool
 		var execResult *core.ExecutionResult
