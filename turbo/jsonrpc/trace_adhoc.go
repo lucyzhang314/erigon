@@ -1196,7 +1196,8 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 	}
 
 	blockCtx := transactions.NewEVMBlockContext(engine, header, parentNrOrHash.RequireCanonical, dbtx, api._blockReader)
-	fmt.Println("isCancun: ", chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Time).IsCancun)
+	is_cancun := chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Time).IsCancun
+	fmt.Println("isCancun: ", is_cancun)
 	for txIndex, msg := range msgs {
 		fmt.Println("---- txIndex: ", txIndex)
 		if err := libcommon.Stopped(ctx.Done()); err != nil {
@@ -1310,7 +1311,7 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 				if overflow {
 					fmt.Println("---- overflow 3")
 				}
-				if txIndex >= 24 {
+				if is_cancun {
 					maxBlobFee, overflow := new(uint256.Int).MulOverflow(msg.MaxFeePerBlobGas(), new(uint256.Int).SetUint64(msg.BlobGas()))
 					if overflow {
 						fmt.Println("---- overflow 4")
