@@ -617,12 +617,15 @@ func (s *RoSnapshots) recalcVisibleFiles() {
 
 	var maxVisibleBlocks []uint64
 	s.segments.Scan(func(segtype snaptype.Enum, value *segments) bool {
+		toClose := make([]*DirtySegment, 0)
 		dirtySegments := value.DirtySegments
 		newVisibleSegments := make([]*VisibleSegment, 0, dirtySegments.Len())
+
 		dirtySegments.Walk(func(segs []*DirtySegment) bool {
 			for _, seg := range segs {
 				if seg.canDelete.Load() {
 					seg.stale.Store(true)
+					toClose = append(toClose, seg)
 					continue
 				}
 				if !seg.Indexed() {
@@ -643,6 +646,10 @@ func (s *RoSnapshots) recalcVisibleFiles() {
 			}
 			return true
 		})
+
+		for _, seg := range toClose {
+			dirtySegments.Delete(seg)
+		}
 
 		// protect from gaps
 		if len(newVisibleSegments) > 0 {
