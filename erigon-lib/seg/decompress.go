@@ -928,23 +928,40 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	return true
 }
 
+func (g *Getter) MatchPrefixUncompressed(prefix []byte) bool {
+	savePos := g.dataP
+	defer func() {
+		g.dataP, g.dataBit = savePos, 0
+	}()
+
+	wordLen := g.nextPos(true /* clean */)
+	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
+	prefixLen := len(prefix)
+	if wordLen == 0 && prefixLen != 0 {
+		return true
+	}
+	if prefixLen == 0 {
+		return false
+	}
+
+	g.nextPos(true)
+
+	return bytes.HasPrefix(g.data[g.dataP:g.dataP+wordLen], prefix)
+}
+
 // MatchCmp lexicographically compares given buf with the word at the current offset in the file.
 // returns 0 if buf == word, -1 if buf < word, 1 if buf > word
+// moves offset to the next word
 func (g *Getter) MatchCmp(buf []byte) int {
 	savePos := g.dataP
 	wordLen := g.nextPos(true)
 	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
-	lenBuf := len(buf)
-	if wordLen == 0 && lenBuf != 0 {
-		g.dataP, g.dataBit = savePos, 0
-		return 1
-	}
-	if wordLen == 0 && lenBuf == 0 {
+	if wordLen == 0 {
 		if g.dataBit > 0 {
 			g.dataP++
 			g.dataBit = 0
 		}
-		return 0
+		return bytes.Compare(g.data[g.dataP:g.dataP], buf)
 	}
 
 	decoded := make([]byte, wordLen)
@@ -981,55 +998,33 @@ func (g *Getter) MatchCmp(buf []byte) int {
 		copy(decoded[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif])
 		postLoopPos += dif
 	}
-	cmp := bytes.Compare(buf, decoded)
-	if cmp == 0 {
-		g.dataP, g.dataBit = postLoopPos, 0
-	} else {
-		g.dataP, g.dataBit = savePos, 0
-	}
-	return cmp
+	g.dataP = postLoopPos
+	g.dataBit = 0
+	return bytes.Compare(decoded, buf)
 }
 
-func (g *Getter) MatchPrefixUncompressed(prefix []byte) bool {
-	savePos := g.dataP
-	defer func() {
-		g.dataP, g.dataBit = savePos, 0
-	}()
-
-	wordLen := g.nextPos(true /* clean */)
-	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
-	prefixLen := len(prefix)
-	if wordLen == 0 && prefixLen != 0 {
-		return true
-	}
-	if prefixLen == 0 {
-		return false
-	}
-
-	g.nextPos(true)
-
-	return bytes.HasPrefix(g.data[g.dataP:g.dataP+wordLen], prefix)
-}
-
+// MatchCmpUncompressed lexicographically compares given buf with the word at the current offset in the file.
+// returns 0 if buf == word, -1 if buf < word, 1 if buf > word
+// moves offset to the next word
 func (g *Getter) MatchCmpUncompressed(buf []byte) int {
-	savePos := g.dataP
-	defer func() {
-		g.dataP, g.dataBit = savePos, 0
-	}()
-
 	wordLen := g.nextPos(true /* clean */)
 	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
-	bufLen := len(buf)
-	if wordLen == 0 && bufLen != 0 {
-		return 1
-	}
-	if bufLen == 0 {
-		return -1
+	if wordLen == 0 {
+		if g.dataBit > 0 {
+			g.dataP++
+			g.dataBit = 0
+		}
+		return bytes.Compare(g.data[g.dataP:g.dataP], buf)
 	}
 
-	g.nextPos(true)
-
-	return bytes.Compare(buf, g.data[g.dataP:g.dataP+wordLen])
+	g.nextPos(false)
+	if g.dataBit > 0 {
+		g.dataP++
+		g.dataBit = 0
+	}
+	pos := g.dataP
+	g.dataP += wordLen
+	return bytes.Compare(g.data[pos:g.dataP], buf)
 }
 
 // FastNext extracts a compressed word from current offset in the file

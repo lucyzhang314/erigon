@@ -74,6 +74,13 @@ func NewReader(g *Getter, c FileCompression) *Reader {
 	return &Reader{Getter: g, c: c}
 }
 
+func (g *Reader) MatchCmp(prefix []byte) int {
+	if g.c&CompressKeys != 0 {
+		return g.Getter.MatchCmp(prefix)
+	}
+	return g.Getter.MatchCmpUncompressed(prefix)
+}
+
 func (g *Reader) MatchPrefix(prefix []byte) bool {
 	if g.c&CompressKeys != 0 {
 		return g.Getter.MatchPrefix(prefix)

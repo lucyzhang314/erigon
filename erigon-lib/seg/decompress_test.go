@@ -92,9 +92,7 @@ func TestDecompressMatchOK(t *testing.T) {
 		if i%2 != 0 {
 			expected := fmt.Sprintf("%s %d", w, i)
 			cmp := g.MatchCmp([]byte(expected))
-			if cmp != 0 {
-				t.Errorf("expexted match with %s", expected)
-			}
+			require.EqualValuesf(t, 0, cmp, "expexted match with %s", expected)
 		} else {
 			word, _ := g.Next(nil)
 			expected := fmt.Sprintf("%s %d", w, i)
