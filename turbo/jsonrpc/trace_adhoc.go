@@ -1264,7 +1264,7 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 			finalizeTxStateWriter = noop
 		}
 
-		// ibs.Reset()
+		ibs.Reset()
 
 		var txFinalized bool
 		var execResult *core.ExecutionResult
@@ -1325,6 +1325,8 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 			fmt.Printf("---- balanceCheck: %v\n", balanceCheck)
 
 			balance := ibs.GetBalance(msg.From())
+			fmt.Printf("---- from: %x\n", msg.From())
+			fmt.Printf("---- to: %x\n", *msg.To())
 			fmt.Printf("---- balance from state: %v\n", balance)
 			fmt.Printf("---- feecap: %v\n", msg.FeeCap())
 			execResult, err = core.ApplyMessage(evm, msg, gp, true /* refunds */, gasBailout /* gasBailout */)

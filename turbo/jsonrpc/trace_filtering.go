@@ -956,6 +956,7 @@ func (api *TraceAPIImpl) callManyTransactions(
 	for i, tx := range txs {
 		fmt.Println("---- tx.Type: ", tx.Type())
 		fmt.Printf("---- tx.FeeCap: %v\n", tx.GetFeeCap())
+		fmt.Printf("---- tx.Hash: %v\n", tx.Hash())
 		isBorStateSyncTxn := tx == borStateSyncTxn
 		var txnHash common.Hash
 		var msg types.Message
