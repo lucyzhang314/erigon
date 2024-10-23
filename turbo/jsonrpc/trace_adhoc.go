@@ -1292,6 +1292,37 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 			txCtx := core.NewEVMTxContext(msg)
 			evm := vm.NewEVM(blockCtx, txCtx, ibs, chainConfig, vmConfig)
 			gp := new(core.GasPool).AddGas(msg.Gas()).AddBlobGas(msg.BlobGas())
+
+			gasVal := uint256.NewInt(0)
+			gasVal.SetUint64(msg.Gas())
+			gasVal, overflow := gasVal.MulOverflow(gasVal, msg.GasPrice())
+			if overflow {
+				fmt.Println("---- overflow 1")
+			}
+			balanceCheck := gasVal
+			if msg.FeeCap() != nil {
+				balanceCheck = uint256.NewInt(0).SetUint64(msg.Gas())
+				balanceCheck, overflow = balanceCheck.MulOverflow(balanceCheck, msg.FeeCap())
+				if overflow {
+					fmt.Println("---- overflow 2")
+				}
+				balanceCheck, overflow = balanceCheck.AddOverflow(balanceCheck, msg.Value())
+				if overflow {
+					fmt.Println("---- overflow 3")
+				}
+				if txIndex >= 24 {
+					maxBlobFee, overflow := new(uint256.Int).MulOverflow(msg.MaxFeePerBlobGas(), new(uint256.Int).SetUint64(msg.BlobGas()))
+					if overflow {
+						fmt.Println("---- overflow 4")
+					}
+					balanceCheck, overflow = balanceCheck.AddOverflow(balanceCheck, maxBlobFee)
+					if overflow {
+						fmt.Println("---- overflow 5")
+					}
+				}
+			}
+			fmt.Printf("---- balanceCheck: %v\n", balanceCheck)
+
 			balance := ibs.GetBalance(msg.From())
 			fmt.Printf("---- balance from state: %v\n", balance)
 			fmt.Printf("---- feecap: %v\n", msg.FeeCap())
