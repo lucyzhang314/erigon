@@ -421,52 +421,7 @@ func (sn *DirtySegment) mappedTxnSnapshot() *silkworm.MappedTxnSnapshot {
 // transaction_hash  -> transactions_segment_offset
 // transaction_hash  -> block_number
 
-type segments struct {
-	DirtySegments   *btree.BTreeG[*DirtySegment]
-	VisibleSegments []*VisibleSegment
-	maxVisibleBlock atomic.Uint64
-}
-
-func (s *segments) View(f func(segments []*VisibleSegment) error) error {
-	return f(s.VisibleSegments)
-}
-
-// no caller yet
-func (s *segments) Segment(blockNum uint64, f func(*VisibleSegment) error) (found bool, err error) {
-	for _, seg := range s.VisibleSegments {
-		if !(blockNum >= seg.from && blockNum < seg.to) {
-			continue
-		}
-		return true, f(seg)
-	}
-	return false, nil
-}
-
-func (s *segments) BeginRotx() *segmentsRotx {
-	for _, seg := range s.VisibleSegments {
-		if !seg.src.frozen {
-			seg.src.refcount.Add(1)
-		}
-	}
-	return &segmentsRotx{VisibleSegments: s.VisibleSegments}
-}
-
 type VisibleSegments []*VisibleSegment
-
-func (s VisibleSegments) View(f func(segments []*VisibleSegment) error) error {
-	return f(s)
-}
-
-// no caller yet
-func (s VisibleSegments) Segment(blockNum uint64, f func(*VisibleSegment) error) (found bool, err error) {
-	for _, seg := range s {
-		if !(blockNum >= seg.from && blockNum < seg.to) {
-			continue
-		}
-		return true, f(seg)
-	}
-	return false, nil
-}
 
 func (s VisibleSegments) BeginRotx() *segmentsRotx {
 	for _, seg := range s {
@@ -506,11 +461,11 @@ type RoSnapshots struct {
 
 	types []snaptype.Type
 
-	dirtySegmentsLock sync.RWMutex // guard all `segments.*.DirtyFiles` fields. doesn't guard `segments` field itself - because list of types is immutable.
-	dirty             [snaptype.MaxEnum]*btree.BTreeG[*DirtySegment]
+	dirtySegmentsLock sync.RWMutex                   // guard all `segments.*.DirtyFiles` fields. doesn't guard `segments` field itself - because list of types is immutable.
+	dirty             []*btree.BTreeG[*DirtySegment] // ordered map `type.Enum()` -> DirtySegments
 
 	visibleSegmentsLock sync.RWMutex
-	visible             [snaptype.MaxEnum]VisibleSegments
+	visible             []VisibleSegments // ordered map `type.Enum()` -> VisbileSegments
 
 	dir         string
 	segmentsMax atomic.Uint64 // all types of .seg files are available - up to this number
@@ -532,7 +487,10 @@ func NewRoSnapshots(cfg ethconfig.BlocksFreezing, snapDir string, segmentsMin ui
 }
 
 func newRoSnapshots(cfg ethconfig.BlocksFreezing, snapDir string, types []snaptype.Type, segmentsMin uint64, logger log.Logger) *RoSnapshots {
-	s := &RoSnapshots{dir: snapDir, cfg: cfg, logger: logger, types: types}
+	s := &RoSnapshots{dir: snapDir, cfg: cfg, logger: logger, types: types,
+		dirty:   make([]*btree.BTreeG[*DirtySegment], snaptype.MaxEnum),
+		visible: make([]VisibleSegments, snaptype.MaxEnum),
+	}
 	for _, snapType := range types {
 		s.dirty[snapType.Enum()] = btree.NewBTreeGOptions[*DirtySegment](DirtySegmentLess, btree.Options{Degree: 128, NoLocks: false})
 	}
@@ -633,6 +591,8 @@ func (s *RoSnapshots) recalcVisibleFiles() {
 
 	s.dirtySegmentsLock.RLock()
 	defer s.dirtySegmentsLock.RUnlock()
+
+	s.visible = make([]VisibleSegments, snaptype.MaxEnum) // create new pointer - only new readers will see it. old-alive readers will continue use previous pointer
 
 	maxVisibleBlocks := make([]uint64, 0, len(s.types))
 	for _, t := range s.types {
@@ -2480,7 +2440,7 @@ func removeOldFiles(toDel []string, snapDir string) {
 
 type View struct {
 	s               *RoSnapshots
-	VisibleSegments [snaptype.MaxEnum]*segmentsRotx
+	VisibleSegments []*segmentsRotx
 	baseSegType     snaptype.Type
 }
 
@@ -2488,7 +2448,7 @@ func (s *RoSnapshots) View() *View {
 	s.visibleSegmentsLock.RLock()
 	defer s.visibleSegmentsLock.RUnlock()
 
-	var sgs [snaptype.MaxEnum]*segmentsRotx
+	sgs := make([]*segmentsRotx, snaptype.MaxEnum)
 	for _, t := range s.types {
 		sgs[t.Enum()] = s.visible[t.Enum()].BeginRotx()
 	}
