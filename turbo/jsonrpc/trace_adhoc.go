@@ -1294,7 +1294,7 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 			gp := new(core.GasPool).AddGas(msg.Gas()).AddBlobGas(msg.BlobGas())
 			balance := ibs.GetBalance(msg.From())
 			fmt.Printf("---- balance from state: %v\n", balance)
-			fmt.Println("---- feecap: %v\n", msg.FeeCap())
+			fmt.Printf("---- feecap: %v\n", msg.FeeCap())
 			execResult, err = core.ApplyMessage(evm, msg, gp, true /* refunds */, gasBailout /* gasBailout */)
 		}
 		if err != nil {
