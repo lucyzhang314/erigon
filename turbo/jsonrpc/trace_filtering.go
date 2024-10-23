@@ -904,6 +904,7 @@ func (api *TraceAPIImpl) callManyTransactions(
 	cfg *chain.Config,
 	traceConfig *tracers.TraceConfig,
 ) ([]*TraceCallResult, consensus.SystemCall, error) {
+	fmt.Println("-----> callManyTransactions")
 	blockNumber := block.NumberU64()
 	pNo := blockNumber
 	if pNo > 0 {
@@ -928,6 +929,8 @@ func (api *TraceAPIImpl) callManyTransactions(
 			borStateSyncTxn = bortypes.NewBorTransaction()
 			txs = append(txs, borStateSyncTxn)
 		}
+	} else {
+		fmt.Println("--- is not Bor")
 	}
 
 	callParams := make([]TraceCallParam, 0, len(txs))

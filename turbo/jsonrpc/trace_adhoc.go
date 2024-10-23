@@ -1156,14 +1156,21 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 	ibs := state.New(cachedReader)
 
 	// TODO: can read here only parent header
-	parentBlock, err := api.blockWithSenders(ctx, dbtx, hash, blockNumber)
+	// parentBlock, err := api.blockWithSenders(ctx, dbtx, hash, blockNumber)
+	// if err != nil {
+	// 	return nil, nil, err
+	// }
+	// if parentBlock == nil {
+	// 	return nil, nil, fmt.Errorf("parent block %d(%x) not found", blockNumber, hash)
+	// }
+	// parentHeader := parentBlock.Header()
+	// if parentHeader == nil {
+	// 	return nil, nil, fmt.Errorf("parent header %d(%x) not found", blockNumber, hash)
+	// }
+	parentHeader, err := api.headerByRPCNumber(ctx, rpc.BlockNumber(blockNumber), dbtx)
 	if err != nil {
 		return nil, nil, err
 	}
-	if parentBlock == nil {
-		return nil, nil, fmt.Errorf("parent block %d(%x) not found", blockNumber, hash)
-	}
-	parentHeader := parentBlock.Header()
 	if parentHeader == nil {
 		return nil, nil, fmt.Errorf("parent header %d(%x) not found", blockNumber, hash)
 	}
@@ -1187,6 +1194,8 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 		header = parentHeader
 		useParent = true
 	}
+
+	blockCtx := transactions.NewEVMBlockContext(engine, header, parentNrOrHash.RequireCanonical, dbtx, api._blockReader)
 
 	for txIndex, msg := range msgs {
 		if err := libcommon.Stopped(ctx.Done()); err != nil {
@@ -1229,7 +1238,6 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 			vmConfig.Tracer = &ot
 		}
 
-		blockCtx := transactions.NewEVMBlockContext(engine, header, parentNrOrHash.RequireCanonical, dbtx, api._blockReader)
 		if useParent {
 			blockCtx.GasLimit = math.MaxUint64
 			blockCtx.MaxGasLimit = true
