@@ -26,10 +26,8 @@ import (
 	"time"
 
 	liberrors "github.com/erigontech/erigon-lib/common/errors"
-	"github.com/erigontech/erigon-lib/kv"
 	"github.com/erigontech/erigon-lib/log/v3"
 	bortypes "github.com/erigontech/erigon/polygon/bor/types"
-	"github.com/erigontech/erigon/polygon/polygoncommon"
 
 	libcommon "github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon/core/types"
@@ -42,37 +40,27 @@ type eventFetcher interface {
 }
 
 type Config struct {
-	DataDir      string
+	Store        Store
 	Logger       log.Logger
 	BorConfig    *borcfg.BorConfig
 	EventFetcher eventFetcher
-	RoTxLimit    int64
 }
 
-func Assemble(config Config) *Bridge {
-	bridgeDB := polygoncommon.NewDatabase(config.DataDir, kv.PolygonBridgeDB, databaseTablesCfg, config.Logger, false /* accede */, config.RoTxLimit)
-	bridgeStore := NewStore(bridgeDB)
-	reader := NewReader(bridgeStore, config.Logger, config.BorConfig.StateReceiverContractAddress())
-	return NewBridge(bridgeStore, config.Logger, config.BorConfig, config.EventFetcher, reader)
-}
-
-func NewBridge(store Store, logger log.Logger, borConfig *borcfg.BorConfig, eventFetcher eventFetcher, reader *Reader) *Bridge {
-	transientErrors := []error{
-		heimdall.ErrBadGateway,
-		heimdall.ErrServiceUnavailable,
-		context.DeadlineExceeded,
-	}
-
+func NewBridge(config Config) *Bridge {
 	return &Bridge{
-		store:                        store,
-		logger:                       logger,
-		borConfig:                    borConfig,
-		eventFetcher:                 eventFetcher,
-		stateReceiverContractAddress: borConfig.StateReceiverContractAddress(),
-		reader:                       reader,
-		transientErrors:              transientErrors,
-		fetchedEventsSignal:          make(chan struct{}),
-		processedBlocksSignal:        make(chan struct{}),
+		store:                        config.Store,
+		logger:                       config.Logger,
+		borConfig:                    config.BorConfig,
+		eventFetcher:                 config.EventFetcher,
+		stateReceiverContractAddress: libcommon.HexToAddress(config.BorConfig.StateReceiverContract),
+		reader:                       NewReader(config.Store, config.Logger, config.BorConfig.StateReceiverContractAddress()),
+		transientErrors: []error{
+			heimdall.ErrBadGateway,
+			heimdall.ErrServiceUnavailable,
+			context.DeadlineExceeded,
+		},
+		fetchedEventsSignal:   make(chan struct{}),
+		processedBlocksSignal: make(chan struct{}),
 	}
 }
 
@@ -92,11 +80,71 @@ type Bridge struct {
 	lastProcessedBlockInfo atomic.Pointer[ProcessedBlockInfo]
 	synchronizeMu          sync.Mutex
 	unwindMu               sync.Mutex
+	ready                  ready
+}
+
+type ready struct {
+	mu     sync.Mutex
+	on     chan struct{}
+	state  bool
+	inited bool
+}
+
+func (me *ready) On() <-chan struct{} {
+	me.mu.Lock()
+	defer me.mu.Unlock()
+	me.init()
+	return me.on
+}
+
+func (me *ready) init() {
+	if me.inited {
+		return
+	}
+	me.on = make(chan struct{})
+	me.inited = true
+}
+
+func (me *ready) set() {
+	me.mu.Lock()
+	defer me.mu.Unlock()
+	me.init()
+	if me.state {
+		return
+	}
+	me.state = true
+	close(me.on)
+}
+
+func (b *Bridge) Ready(ctx context.Context) <-chan error {
+	errc := make(chan error)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			errc <- ctx.Err()
+		case <-b.ready.On():
+			errc <- nil
+		}
+
+		close(errc)
+	}()
+
+	return errc
 }
 
 func (b *Bridge) Run(ctx context.Context) error {
-	defer close(b.fetchedEventsSignal)
-	defer close(b.processedBlocksSignal)
+	defer func() {
+		if b.fetchedEventsSignal != nil {
+			close(b.fetchedEventsSignal)
+			b.fetchedEventsSignal = nil
+		}
+
+		if b.processedBlocksSignal != nil {
+			close(b.processedBlocksSignal)
+			b.processedBlocksSignal = nil
+		}
+	}()
 
 	err := b.store.Prepare(ctx)
 	if err != nil {
@@ -104,13 +152,13 @@ func (b *Bridge) Run(ctx context.Context) error {
 	}
 	defer b.Close()
 
-	// get last known sync ID
-	lastFetchedEventID, err := b.store.LatestEventID(ctx)
+	// get last known sync Id
+	lastFetchedEventId, err := b.store.LastEventId(ctx)
 	if err != nil {
 		return err
 	}
 
-	lastProcessedEventID, err := b.store.LastProcessedEventID(ctx)
+	lastProcessedEventId, err := b.store.LastProcessedEventId(ctx)
 	if err != nil {
 		return err
 	}
@@ -126,11 +174,13 @@ func (b *Bridge) Run(ctx context.Context) error {
 	// start syncing
 	b.logger.Debug(
 		bridgeLogPrefix("running bridge component"),
-		"lastFetchedEventID", lastFetchedEventID,
-		"lastProcessedEventID", lastProcessedEventID,
+		"lastFetchedEventId", lastFetchedEventId,
+		"lastProcessedEventId", lastProcessedEventId,
 		"lastProcessedBlockNum", lastProcessedBlockInfo.BlockNum,
 		"lastProcessedBlockTime", lastProcessedBlockInfo.BlockTime,
 	)
+
+	b.ready.set()
 
 	logTicker := time.NewTicker(30 * time.Second)
 	defer logTicker.Stop()
@@ -143,7 +193,7 @@ func (b *Bridge) Run(ctx context.Context) error {
 		}
 
 		// start scraping events
-		from := lastFetchedEventID + 1
+		from := lastFetchedEventId + 1
 		to := time.Now()
 		events, err := b.eventFetcher.FetchStateSyncEvents(ctx, from, to, heimdall.StateEventsFetchLimit)
 		if err != nil {
@@ -179,7 +229,7 @@ func (b *Bridge) Run(ctx context.Context) error {
 		}
 
 		lastFetchedEvent := events[len(events)-1]
-		lastFetchedEventID = lastFetchedEvent.ID
+		lastFetchedEventId = lastFetchedEvent.ID
 
 		lastFetchedEventTime := lastFetchedEvent.Time.Unix()
 		if lastFetchedEventTime < 0 {
@@ -195,7 +245,7 @@ func (b *Bridge) Run(ctx context.Context) error {
 			b.logger.Debug(
 				bridgeLogPrefix("fetched new events periodic progress"),
 				"count", len(events),
-				"lastFetchedEventID", lastFetchedEventID,
+				"lastFetchedEventId", lastFetchedEventId,
 				"lastFetchedEventTime", lastFetchedEvent.Time.Format(time.RFC3339),
 			)
 		default: // continue
@@ -208,15 +258,17 @@ func (b *Bridge) Close() {
 }
 
 func (b *Bridge) InitialBlockReplayNeeded(ctx context.Context) (uint64, bool, error) {
-	if b.lastProcessedBlockInfo.Load() != nil {
+	lastFrozen := b.store.LastFrozenEventBlockNum()
+
+	if blockInfo := b.lastProcessedBlockInfo.Load(); blockInfo != nil && blockInfo.BlockNum > lastFrozen {
 		return 0, false, nil
 	}
 
-	_, ok, err := b.store.LastProcessedBlockInfo(ctx)
+	blockInfo, ok, err := b.store.LastProcessedBlockInfo(ctx)
 	if err != nil {
 		return 0, false, err
 	}
-	if ok {
+	if ok && blockInfo.BlockNum > lastFrozen {
 		// we have all info, no need to replay
 		return 0, false, nil
 	}
@@ -244,7 +296,7 @@ func (b *Bridge) ProcessNewBlocks(ctx context.Context, blocks []*types.Block) er
 	b.unwindMu.Lock()
 	defer b.unwindMu.Unlock()
 
-	lastProcessedEventID, err := b.store.LastProcessedEventID(ctx)
+	lastProcessedEventId, err := b.store.LastProcessedEventId(ctx)
 	if err != nil {
 		return err
 	}
@@ -262,7 +314,7 @@ func (b *Bridge) ProcessNewBlocks(ctx context.Context, blocks []*types.Block) er
 		"to", blocks[len(blocks)-1].NumberU64(),
 		"lastProcessedBlockNum", lastProcessedBlockInfo.BlockNum,
 		"lastProcessedBlockTime", lastProcessedBlockInfo.BlockTime,
-		"lastProcessedEventID", lastProcessedEventID,
+		"lastProcessedEventId", lastProcessedEventId,
 	)
 
 	var processedBlock bool
@@ -293,8 +345,8 @@ func (b *Bridge) ProcessNewBlocks(ctx context.Context, blocks []*types.Block) er
 			return err
 		}
 
-		startID := lastProcessedEventID + 1
-		endID, err := b.store.LastEventIDWithinWindow(ctx, startID, time.Unix(int64(toTime), 0))
+		startId := lastProcessedEventId + 1
+		endId, err := b.store.LastEventIdWithinWindow(ctx, startId, time.Unix(int64(toTime), 0))
 		if err != nil {
 			return err
 		}
@@ -302,25 +354,25 @@ func (b *Bridge) ProcessNewBlocks(ctx context.Context, blocks []*types.Block) er
 		if b.borConfig.OverrideStateSyncRecords != nil {
 			if eventLimit, ok := b.borConfig.OverrideStateSyncRecords[strconv.FormatUint(blockNum, 10)]; ok {
 				if eventLimit == 0 {
-					endID = 0
+					endId = 0
 				} else {
-					endID = startID + uint64(eventLimit) - 1
+					endId = startId + uint64(eventLimit) - 1
 				}
 			}
 		}
 
-		if endID > 0 {
+		if endId > 0 {
 			b.logger.Debug(
 				bridgeLogPrefix("mapping events to block"),
 				"blockNum", blockNum,
-				"start", startID,
-				"end", endID,
+				"start", startId,
+				"end", endId,
 			)
 
-			lastProcessedEventID = endID
+			lastProcessedEventId = endId
 			eventTxnHash := bortypes.ComputeBorTxHash(blockNum, block.Hash())
 			eventTxnToBlockNum[eventTxnHash] = blockNum
-			blockNumToEventId[blockNum] = endID
+			blockNumToEventId[blockNum] = endId
 		}
 
 		processedBlock = true
@@ -334,7 +386,7 @@ func (b *Bridge) ProcessNewBlocks(ctx context.Context, blocks []*types.Block) er
 		return nil
 	}
 
-	if err := b.store.PutBlockNumToEventID(ctx, blockNumToEventId); err != nil {
+	if err := b.store.PutBlockNumToEventId(ctx, blockNumToEventId); err != nil {
 		return err
 	}
 
