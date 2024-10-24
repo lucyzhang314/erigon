@@ -910,12 +910,11 @@ Loop:
 									receiptsHashResultCh <- nil
 								}
 							}()
+						} else {
+							if err := core.BlockPostValidation(usedGas, blobGasUsed, checkReceipts, txTask.BlockReceipts, txTask.Header, isMining); err != nil {
+								return fmt.Errorf("%w, txnIdx=%d, %v", consensus.ErrInvalidBlock, txTask.TxIndex, err) //same as in stage_exec.go
+							}
 						}
-						a := time.Now()
-						if err := core.BlockPostValidation(usedGas, blobGasUsed, checkReceipts, txTask.BlockReceipts, txTask.Header, isMining); err != nil {
-							return fmt.Errorf("%w, txnIdx=%d, %v", consensus.ErrInvalidBlock, txTask.TxIndex, err) //same as in stage_exec.go
-						}
-						fmt.Println("BlockPostValidation", time.Since(a))
 					}
 					usedGas, blobGasUsed = 0, 0
 				}
