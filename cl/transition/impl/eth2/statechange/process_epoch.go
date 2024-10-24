@@ -90,6 +90,11 @@ func ProcessEpoch(s abstract.BeaconState) error {
 
 	// fmt.Println("ProcessSlashings", time.Since(start))
 	ProcessEth1DataReset(s)
+	if s.Version() >= clparams.ElectraVersion {
+		ProcessPendingDeposits(s)
+		ProcessPendingConsolidations(s)
+	}
+
 	start = time.Now()
 	if err := ProcessEffectiveBalanceUpdates(s); err != nil {
 		return err

@@ -24,6 +24,7 @@ import (
 	"github.com/erigontech/erigon/cl/cltypes/solid"
 )
 
+//go:generate mockgen -typed=true -destination=./mock_services/beacon_state_mock.go -package=mock_services . BeaconState
 type BeaconState interface {
 	BeaconStateBasic
 	BeaconStateExtension
@@ -58,6 +59,7 @@ type BeaconStateExtension interface {
 	PreviousStateRoot() common.Hash
 	SetPreviousStateRoot(root common.Hash)
 	GetValidatorActivationChurnLimit() uint64
+	GetPendingPartialWithdrawals() *solid.ListSSZ[*solid.PendingPartialWithdrawal]
 }
 
 type BeaconStateBasic interface {
@@ -122,7 +124,8 @@ type BeaconStateMutator interface {
 	SetValidatorInactivityScore(index int, score uint64) error
 	SetCurrentEpochParticipationFlags(flags []cltypes.ParticipationFlags)
 	SetPreviousEpochParticipationFlags(flags []cltypes.ParticipationFlags)
-	SetPreviousEpochAttestations(attestations *solid.ListSSZ[*solid.PendingAttestation]) // temporarily skip this mock
+	SetPreviousEpochAttestations(attestations *solid.ListSSZ[*solid.PendingAttestation])
+	SetPendingPartialWithdrawals(*solid.ListSSZ[*solid.PendingPartialWithdrawal])
 
 	AddEth1DataVote(vote *cltypes.Eth1Data)
 	AddValidator(validator solid.Validator, balance uint64)
@@ -136,6 +139,7 @@ type BeaconStateMutator interface {
 	AddPreviousEpochAttestation(attestation *solid.PendingAttestation)
 
 	AppendValidator(in solid.Validator)
+	AppendPendingDeposit(deposit *solid.PendingDeposit)
 
 	ResetEth1DataVotes()
 	ResetEpochParticipation()

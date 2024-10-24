@@ -385,10 +385,12 @@ type BeaconChainConfig struct {
 	MinEpochsForBlobsSidecarsRequest uint64 `yaml:"MIN_EPOCHS_FOR_BLOBS_SIDECARS_REQUEST" spec:"true" json:"MIN_EPOCHS_FOR_BLOBS_SIDECARS_REQUEST,string"` // MinEpochsForBlobsSidecarsRequest defines the minimum number of epochs to wait before requesting blobs sidecars.
 
 	// Gwei value constants.
-	MinDepositAmount          uint64 `yaml:"MIN_DEPOSIT_AMOUNT" spec:"true" json:"MIN_DEPOSIT_AMOUNT,string"`                   // MinDepositAmount is the minimum amount of Gwei a validator can send to the deposit contract at once (lower amounts will be reverted).
-	MaxEffectiveBalance       uint64 `yaml:"MAX_EFFECTIVE_BALANCE" spec:"true" json:"MAX_EFFECTIVE_BALANCE,string"`             // MaxEffectiveBalance is the maximal amount of Gwei that is effective for staking.
-	EjectionBalance           uint64 `yaml:"EJECTION_BALANCE" spec:"true" json:"EJECTION_BALANCE,string"`                       // EjectionBalance is the minimal GWei a validator needs to have before ejected.
-	EffectiveBalanceIncrement uint64 `yaml:"EFFECTIVE_BALANCE_INCREMENT" spec:"true" json:"EFFECTIVE_BALANCE_INCREMENT,string"` // EffectiveBalanceIncrement is used for converting the high balance into the low balance for validators.
+	MinDepositAmount           uint64 `yaml:"MIN_DEPOSIT_AMOUNT" spec:"true" json:"MIN_DEPOSIT_AMOUNT,string"`                       // MinDepositAmount is the minimum amount of Gwei a validator can send to the deposit contract at once (lower amounts will be reverted).
+	MaxEffectiveBalance        uint64 `yaml:"MAX_EFFECTIVE_BALANCE" spec:"true" json:"MAX_EFFECTIVE_BALANCE,string"`                 // MaxEffectiveBalance is the maximal amount of Gwei that is effective for staking.
+	MaxEffectiveBalanceElectra uint64 `yaml:"MAX_EFFECTIVE_BALANCE_ELECTRA" spec:"true" json:"MAX_EFFECTIVE_BALANCE_ELECTRA,string"` // MaxEffectiveBalanceElectra is the maximal amount of Gwei that is effective for staking in Electra.
+	MinActivationBalance       uint64 `yaml:"MIN_ACTIVATION_BALANCE" spec:"true" json:"MIN_ACTIVATION_BALANCE,string"`               // MinActivationBalance is the minimal GWei a validator needs to have before activated.
+	EjectionBalance            uint64 `yaml:"EJECTION_BALANCE" spec:"true" json:"EJECTION_BALANCE,string"`                           // EjectionBalance is the minimal GWei a validator needs to have before ejected.
+	EffectiveBalanceIncrement  uint64 `yaml:"EFFECTIVE_BALANCE_INCREMENT" spec:"true" json:"EFFECTIVE_BALANCE_INCREMENT,string"`     // EffectiveBalanceIncrement is used for converting the high balance into the low balance for validators.
 
 	// Initial value constants.
 	BLSWithdrawalPrefixByte         ConfigByte `yaml:"BLS_WITHDRAWAL_PREFIX" spec:"true" json:"BLS_WITHDRAWAL_PREFIX"`                    // BLSWithdrawalPrefixByte is used for BLS withdrawal and it's the first byte.
@@ -550,8 +552,14 @@ type BeaconChainConfig struct {
 	TargetNumberOfPeers          uint64 `yaml:"TARGET_NUMBER_OF_PEERS" spec:"true" json:"TARGET_NUMBER_OF_PEERS,string"`                     // TargetNumberOfPeers defines the target number of peers.
 
 	// Electra
-	MinPerEpochChurnLimitElectra        uint64 `yaml:"MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA" spec:"true" json:"MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA,string"`                 // MinPerEpochChurnLimitElectra defines the minimum per epoch churn limit for Electra.
-	MaxPerEpochActivationExitChurnLimit uint64 `yaml:"MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT" spec:"true" json:"MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT,string"` // MaxPerEpochActivationExitChurnLimit defines the maximum per epoch activation exit churn limit for Electra.
+	MinPerEpochChurnLimitElectra          uint64 `yaml:"MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA" spec:"true" json:"MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA,string"`                   // MinPerEpochChurnLimitElectra defines the minimum per epoch churn limit for Electra.
+	MaxPerEpochActivationExitChurnLimit   uint64 `yaml:"MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT" spec:"true" json:"MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT,string"`   // MaxPerEpochActivationExitChurnLimit defines the maximum per epoch activation exit churn limit for Electra.
+	MaxDepositRequestsPerPayload          uint64 `yaml:"MAX_DEPOSIT_REQUESTS_PER_PAYLOAD" spec:"true" json:"MAX_DEPOSIT_REQUESTS_PER_PAYLOAD,string"`                     // MaxDepositRequestsPerPayload defines the maximum number of deposit requests in a block.
+	MaxWithdrawalRequestsPerPayload       uint64 `yaml:"MAX_WITHDRAWAL_REQUESTS_PER_PAYLOAD" spec:"true" json:"MAX_WITHDRAWAL_REQUESTS_PER_PAYLOAD,string"`               // MaxWithdrawalRequestsPerPayload defines the maximum number of withdrawal requests in a block.
+	MaxConsolidationRequestsPerPayload    uint64 `yaml:"MAX_CONSOLIDATION_REQUESTS_PER_PAYLOAD" spec:"true" json:"MAX_CONSOLIDATION_REQUESTS_PER_PAYLOAD,string"`         // MaxConsolidationRequestsPerPayload defines the maximum number of consolidation requests in a block.
+	MinSlashingPenaltyQuotientElectra     uint64 `yaml:"MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA" spec:"true" json:"MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA,string"`           // MinSlashingPenaltyQuotientElectra for slashing penalties post Electra hard fork.
+	WhistleBlowerRewardQuotientElectra    uint64 `yaml:"WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA" spec:"true" json:"WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA,string"`           // WhistleBlowerRewardQuotientElectra is used to calculate whistle blower reward post Electra hard fork.
+	MaxPendingPartialsPerWithdrawalsSweep uint64 `yaml:"MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP" spec:"true" json:"MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP,string"` // MaxPendingPartialsPerWithdrawalsSweep bounds the size of the sweep searching for pending partials per slot.
 }
 
 func (b *BeaconChainConfig) RoundSlotToEpoch(slot uint64) uint64 {
@@ -633,10 +641,12 @@ var MainnetBeaconConfig BeaconChainConfig = BeaconChainConfig{
 	MinEpochsForBlobsSidecarsRequest: 4096,
 
 	// Gwei value constants.
-	MinDepositAmount:          1 * 1e9,
-	MaxEffectiveBalance:       32 * 1e9,
-	EjectionBalance:           16 * 1e9,
-	EffectiveBalanceIncrement: 1 * 1e9,
+	MinDepositAmount:           1 * 1e9,
+	MaxEffectiveBalance:        32 * 1e9,
+	MinActivationBalance:       32 * 1e9,
+	MaxEffectiveBalanceElectra: 2048 * 1e9,
+	EjectionBalance:            16 * 1e9,
+	EffectiveBalanceIncrement:  1 * 1e9,
 
 	// Initial value constants.
 	BLSWithdrawalPrefixByte:         ConfigByte(0),
@@ -798,8 +808,14 @@ var MainnetBeaconConfig BeaconChainConfig = BeaconChainConfig{
 	CustodyRequirement:           1,
 	TargetNumberOfPeers:          70,
 
-	MinPerEpochChurnLimitElectra:        128000000000,
-	MaxPerEpochActivationExitChurnLimit: 256000000000,
+	MinPerEpochChurnLimitElectra:          128000000000,
+	MaxPerEpochActivationExitChurnLimit:   256000000000,
+	MaxDepositRequestsPerPayload:          8192,
+	MaxWithdrawalRequestsPerPayload:       16,
+	MaxConsolidationRequestsPerPayload:    1,
+	MinSlashingPenaltyQuotientElectra:     4096,
+	WhistleBlowerRewardQuotientElectra:    4096,
+	MaxPendingPartialsPerWithdrawalsSweep: 8,
 }
 
 func mainnetConfig() BeaconChainConfig {
@@ -961,6 +977,21 @@ func (b *BeaconChainConfig) GetMinSlashingPenaltyQuotient(version StateVersion) 
 		return b.MinSlashingPenaltyQuotientBellatrix
 	case DenebVersion:
 		return b.MinSlashingPenaltyQuotientBellatrix
+	case ElectraVersion:
+		return b.MinSlashingPenaltyQuotientElectra
+	default:
+		panic("not implemented")
+	}
+}
+
+func (b *BeaconChainConfig) GetProportionalSlashingMultiplier(version StateVersion) uint64 {
+	switch version {
+	case Phase0Version:
+		return b.ProportionalSlashingMultiplier
+	case AltairVersion:
+		return b.ProportionalSlashingMultiplierAltair
+	case BellatrixVersion, CapellaVersion, DenebVersion, ElectraVersion:
+		return b.ProportionalSlashingMultiplierBellatrix
 	default:
 		panic("not implemented")
 	}
@@ -977,6 +1008,8 @@ func (b *BeaconChainConfig) GetPenaltyQuotient(version StateVersion) uint64 {
 	case CapellaVersion:
 		return b.InactivityPenaltyQuotientBellatrix
 	case DenebVersion:
+		return b.InactivityPenaltyQuotientBellatrix
+	case ElectraVersion:
 		return b.InactivityPenaltyQuotientBellatrix
 	default:
 		panic("not implemented")
@@ -1010,6 +1043,17 @@ func (b *BeaconChainConfig) PreviousEpochAttestationsLength() uint64 {
 // BeaconChainConfig.
 func (b *BeaconChainConfig) CurrentEpochAttestationsLength() uint64 {
 	return b.SlotsPerEpoch * b.MaxAttestations
+}
+
+func (b *BeaconChainConfig) MaxEffectiveBalanceForVersion(version StateVersion) uint64 {
+	switch version {
+	case Phase0Version, AltairVersion, BellatrixVersion, CapellaVersion, DenebVersion:
+		return b.MaxEffectiveBalance
+	case ElectraVersion:
+		return b.MaxEffectiveBalanceElectra
+	default:
+		panic("invalid version")
+	}
 }
 
 func (b *BeaconChainConfig) GetForkVersionByVersion(v StateVersion) uint32 {

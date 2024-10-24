@@ -26,7 +26,7 @@ import (
 	"github.com/erigontech/erigon/cl/beacon/beaconhttp"
 	"github.com/erigontech/erigon/cl/persistence/base_encoding"
 	state_accessors "github.com/erigontech/erigon/cl/persistence/state"
-	shuffling2 "github.com/erigontech/erigon/cl/phase1/core/state/shuffling"
+	"github.com/erigontech/erigon/cl/phase1/core/state/shuffling"
 
 	libcommon "github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/kv"
@@ -102,7 +102,7 @@ func (a *ApiHandler) getDutiesProposer(w http.ResponseWriter, r *http.Request) (
 			a.beaconChainCfg.EpochsPerHistoricalVector
 		// Input for the seed hash.
 		mix := state.GetRandaoMix(int(mixPosition))
-		input := shuffling2.GetSeed(a.beaconChainCfg, mix, epoch, a.beaconChainCfg.DomainBeaconProposer)
+		input := shuffling.GetSeed(a.beaconChainCfg, mix, epoch, a.beaconChainCfg.DomainBeaconProposer)
 		slotByteArray := make([]byte, 8)
 		binary.LittleEndian.PutUint64(slotByteArray, slot)
 
@@ -124,7 +124,7 @@ func (a *ApiHandler) getDutiesProposer(w http.ResponseWriter, r *http.Request) (
 		// Do it in parallel
 		go func(i, slot uint64, indicies []uint64, seedArray [32]byte) {
 			defer wg.Done()
-			proposerIndex, err = shuffling2.ComputeProposerIndex(state.BeaconState, indices, seedArray)
+			proposerIndex, err = shuffling.ComputeProposerIndex(state.BeaconState, indices, seedArray)
 			if err != nil {
 				panic(err)
 			}

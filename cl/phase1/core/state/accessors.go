@@ -24,6 +24,7 @@ import (
 
 	"github.com/Giulio2002/bls"
 	libcommon "github.com/erigontech/erigon-lib/common"
+	"github.com/erigontech/erigon-lib/log/v3"
 
 	"github.com/erigontech/erigon/cl/abstract"
 	"github.com/erigontech/erigon/cl/clparams"
@@ -224,9 +225,15 @@ func GetUnslashedParticipatingIndices(b abstract.BeaconState, flagIndex int, epo
 // IsValidatorEligibleForActivationQueue returns whether the validator is eligible to be placed into the activation queue.
 // Implementation of is_eligible_for_activation_queue.
 // Specs at: https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/beacon-chain.md#is_eligible_for_activation_queue
+// updated for Electra: https://github.com/ethereum/consensus-specs/blob/dev/specs/electra/beacon-chain.md#modified-is_eligible_for_activation_queue
 func IsValidatorEligibleForActivationQueue(b abstract.BeaconState, validator solid.Validator) bool {
+	if b.Version().BeforeOrEqual(clparams.DenebVersion) {
+		return validator.ActivationEligibilityEpoch() == b.BeaconConfig().FarFutureEpoch &&
+			validator.EffectiveBalance() == b.BeaconConfig().MaxEffectiveBalance
+	}
+	// Electra and after
 	return validator.ActivationEligibilityEpoch() == b.BeaconConfig().FarFutureEpoch &&
-		validator.EffectiveBalance() == b.BeaconConfig().MaxEffectiveBalance
+		validator.EffectiveBalance() >= b.BeaconConfig().MinActivationBalance
 }
 
 // IsValidatorEligibleForActivation returns whether the validator is eligible for activation.
@@ -248,7 +255,7 @@ func ComputeTimestampAtSlot(b abstract.BeaconState, slot uint64) uint64 {
 }
 
 // ExpectedWithdrawals calculates the expected withdrawals that can be made by validators in the current epoch
-func ExpectedWithdrawals(b abstract.BeaconState, currentEpoch uint64) []*cltypes.Withdrawal {
+func ExpectedWithdrawals(b abstract.BeaconState, currentEpoch uint64) ([]*cltypes.Withdrawal, uint64) {
 	// Get the current epoch, the next withdrawal index, and the next withdrawal validator index
 	nextWithdrawalIndex := b.NextWithdrawalIndex()
 	nextWithdrawalValidatorIndex := b.NextWithdrawalValidatorIndex()
@@ -258,6 +265,38 @@ func ExpectedWithdrawals(b abstract.BeaconState, currentEpoch uint64) []*cltypes
 	maxValidatorsPerWithdrawalsSweep := b.BeaconConfig().MaxValidatorsPerWithdrawalsSweep
 	bound := min(maxValidators, maxValidatorsPerWithdrawalsSweep)
 	withdrawals := make([]*cltypes.Withdrawal, 0, bound)
+	partialWithdrawalsCount := uint64(0)
+
+	// [New in Electra:EIP7251] Consume pending partial withdrawals
+	cfg := b.BeaconConfig()
+	if b.Version().AfterOrEqual(clparams.ElectraVersion) {
+		b.GetPendingPartialWithdrawals().Range(func(index int, w *solid.PendingPartialWithdrawal, length int) bool {
+			if w.WithdrawableEpoch > currentEpoch || len(withdrawals) == int(cfg.MaxPendingPartialsPerWithdrawalsSweep) {
+				return false
+			}
+			validatorBalance, err := b.ValidatorBalance(int(w.Index))
+			if err != nil {
+				log.Warn("Failed to get validator balance", "index", w.Index, "error", err)
+				return false
+			}
+			validator := b.ValidatorSet().Get(int(w.Index))
+			if validator.ExitEpoch() == cfg.FarFutureEpoch &&
+				validator.EffectiveBalance() >= cfg.MinActivationBalance &&
+				validatorBalance > cfg.MinActivationBalance {
+				wd := validator.WithdrawalCredentials()
+				withdrawableBalance := min(validatorBalance-cfg.MinActivationBalance, w.Amount)
+				withdrawals = append(withdrawals, &cltypes.Withdrawal{
+					Index:     nextWithdrawalIndex,
+					Validator: w.Index,
+					Address:   libcommon.BytesToAddress(wd[12:]),
+					Amount:    withdrawableBalance,
+				})
+				nextWithdrawalIndex++
+			}
+			partialWithdrawalsCount++
+			return true
+		})
+	}
 
 	// Loop through the validators to calculate expected withdrawals
 	for validatorCount := uint64(0); validatorCount < bound && len(withdrawals) != int(b.BeaconConfig().MaxWithdrawalsPerPayload); validatorCount++ {
@@ -267,7 +306,7 @@ func ExpectedWithdrawals(b abstract.BeaconState, currentEpoch uint64) []*cltypes
 		currentBalance, _ := b.ValidatorBalance(int(nextWithdrawalValidatorIndex))
 		wd := currentValidator.WithdrawalCredentials()
 		// Check if the validator is fully withdrawable
-		if isFullyWithdrawableValidator(b.BeaconConfig(), currentValidator, currentBalance, currentEpoch) {
+		if isFullyWithdrawableValidator(b, currentValidator, currentBalance, currentEpoch) {
 			// Add a new withdrawal with the validator's withdrawal credentials and balance
 			newWithdrawal := &cltypes.Withdrawal{
 				Index:     nextWithdrawalIndex,
@@ -277,7 +316,7 @@ func ExpectedWithdrawals(b abstract.BeaconState, currentEpoch uint64) []*cltypes
 			}
 			withdrawals = append(withdrawals, newWithdrawal)
 			nextWithdrawalIndex++
-		} else if isPartiallyWithdrawableValidator(b.BeaconConfig(), currentValidator, currentBalance) { // Check if the validator is partially withdrawable
+		} else if isPartiallyWithdrawableValidator(b, currentValidator, currentBalance) { // Check if the validator is partially withdrawable
 			// Add a new withdrawal with the validator's withdrawal credentials and balance minus the maximum effective balance
 			newWithdrawal := &cltypes.Withdrawal{
 				Index:     nextWithdrawalIndex,
@@ -294,5 +333,5 @@ func ExpectedWithdrawals(b abstract.BeaconState, currentEpoch uint64) []*cltypes
 	}
 
 	// Return the withdrawals slice
-	return withdrawals
+	return withdrawals, partialWithdrawalsCount
 }

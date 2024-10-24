@@ -138,6 +138,31 @@ func (I *impl) ProcessAttesterSlashing(
 	return nil
 }
 
+func isValidDepositSignature(depositData *cltypes.DepositData, cfg *clparams.BeaconChainConfig) (bool, error) {
+	// Agnostic domain.
+	domain, err := fork.ComputeDomain(
+		cfg.DomainDeposit[:],
+		utils.Uint32ToBytes4(uint32(cfg.GenesisForkVersion)),
+		[32]byte{},
+	)
+	if err != nil {
+		return false, err
+	}
+	depositMessageRoot, err := depositData.MessageHash()
+	if err != nil {
+		return false, err
+	}
+	signedRoot := utils.Sha256(depositMessageRoot[:], domain)
+	// Perform BLS verification and if successful noice.
+	valid, err := bls.Verify(depositData.Signature[:], signedRoot[:], depositData.PubKey[:])
+	if err != nil || !valid {
+		// ignore err here
+		log.Debug("Validator BLS verification failed", "valid", valid, "err", err)
+		return false, nil
+	}
+	return true, nil
+}
+
 func (I *impl) ProcessDeposit(s abstract.BeaconState, deposit *cltypes.Deposit) error {
 	if deposit == nil {
 		return nil
@@ -163,7 +188,6 @@ func (I *impl) ProcessDeposit(s abstract.BeaconState, deposit *cltypes.Deposit) 
 	) {
 		return errors.New("processDepositForAltair: Could not validate deposit root")
 	}
-
 	// Increment index
 	s.SetEth1DepositIndex(depositIndex + 1)
 	publicKey := deposit.Data.PubKey
@@ -171,39 +195,56 @@ func (I *impl) ProcessDeposit(s abstract.BeaconState, deposit *cltypes.Deposit) 
 	// Check if pub key is in validator set
 	validatorIndex, has := s.ValidatorIndexByPubkey(publicKey)
 	if !has {
-		// Agnostic domain.
-		domain, err := fork.ComputeDomain(
-			s.BeaconConfig().DomainDeposit[:],
-			utils.Uint32ToBytes4(uint32(s.BeaconConfig().GenesisForkVersion)),
-			[32]byte{},
-		)
-		if err != nil {
+		// Check if the deposit is valid
+		if valid, err := isValidDepositSignature(deposit.Data, s.BeaconConfig()); err != nil {
 			return err
-		}
-		depositMessageRoot, err := deposit.Data.MessageHash()
-		if err != nil {
-			return err
-		}
-		signedRoot := utils.Sha256(depositMessageRoot[:], domain)
-		// Perform BLS verification and if successful noice.
-		valid, err := bls.Verify(deposit.Data.Signature[:], signedRoot[:], publicKey[:])
-		// Literally you can input it trash.
-		if !valid || err != nil {
-			log.Debug("Validator BLS verification failed", "valid", valid, "err", err)
+		} else if !valid {
 			return nil
 		}
 		// Append validator
-		s.AddValidator(state.ValidatorFromDeposit(s.BeaconConfig(), deposit), amount)
-		// Altair forward
+		s.AddValidator(state.GetValidatorFromDeposit(s, deposit), amount)
 		if s.Version() >= clparams.AltairVersion {
+			// Altair forward
 			s.AddCurrentEpochParticipationFlags(cltypes.ParticipationFlags(0))
 			s.AddPreviousEpochParticipationFlags(cltypes.ParticipationFlags(0))
 			s.AddInactivityScore(0)
 		}
+		if s.Version() >= clparams.ElectraVersion {
+			s.AppendPendingDeposit(&solid.PendingDeposit{
+				PubKey:                publicKey,
+				WithdrawalCredentials: deposit.Data.WithdrawalCredentials,
+				Amount:                amount,
+				Signature:             deposit.Data.Signature,
+				Slot:                  s.BeaconConfig().GenesisSlot, // Use GENESIS_SLOT to distinguish from a pending deposit request
+			})
+		}
 		return nil
 	}
-	// Increase the balance if exists already
+	if s.Version() >= clparams.ElectraVersion {
+		s.AppendPendingDeposit(&solid.PendingDeposit{
+			PubKey:                publicKey,
+			WithdrawalCredentials: deposit.Data.WithdrawalCredentials,
+			Amount:                amount,
+			Signature:             deposit.Data.Signature,
+			Slot:                  s.BeaconConfig().GenesisSlot, // Use GENESIS_SLOT to distinguish from a pending deposit request
+		})
+		return nil
+	}
+	// Deneb and before: Increase the balance if exists already
 	return state.IncreaseBalance(s, validatorIndex, amount)
+
+}
+
+func getPendingBalanceToWithdraw(s abstract.BeaconState, validatorIndex uint64) uint64 {
+	ws := s.GetPendingPartialWithdrawals()
+	balance := uint64(0)
+	ws.Range(func(index int, withdrawal *solid.PendingPartialWithdrawal, length int) bool {
+		if withdrawal.Index == validatorIndex {
+			balance += withdrawal.Amount
+		}
+		return true
+	})
+	return balance
 }
 
 func IsVoluntaryExitApplicable(s abstract.BeaconState, voluntaryExit *cltypes.VoluntaryExit) error {
@@ -212,19 +253,29 @@ func IsVoluntaryExitApplicable(s abstract.BeaconState, voluntaryExit *cltypes.Vo
 	if err != nil {
 		return err
 	}
+	// Verify the validator is active
 	if !validator.Active(currentEpoch) {
 		return errors.New("ProcessVoluntaryExit: validator is not active")
 	}
+	// Verify exit has not been initiated
 	if validator.ExitEpoch() != s.BeaconConfig().FarFutureEpoch {
 		return errors.New(
 			"ProcessVoluntaryExit: another exit for the same validator is already getting processed",
 		)
 	}
+	// Exits must specify an epoch when they become valid; they are not valid before then
 	if currentEpoch < voluntaryExit.Epoch {
 		return errors.New("ProcessVoluntaryExit: exit is happening in the future")
 	}
+	// Verify the validator has been active long enough
 	if currentEpoch < validator.ActivationEpoch()+s.BeaconConfig().ShardCommitteePeriod {
 		return errors.New("ProcessVoluntaryExit: exit is happening too fast")
+	}
+	if s.Version() >= clparams.ElectraVersion {
+		// Only exit validator if it has no pending withdrawals in the queue
+		if b := getPendingBalanceToWithdraw(s, voluntaryExit.ValidatorIndex); b > 0 {
+			return fmt.Errorf("ProcessVoluntaryExit: validator has pending balance to withdraw: %d", b)
+		}
 	}
 	return nil
 }
@@ -257,8 +308,8 @@ func (I *impl) ProcessWithdrawals(
 	numValidators := uint64(s.ValidatorLength())
 
 	// Check if full validation is required and verify expected withdrawals.
+	expectedWithdrawals, partialWithdrawalsCount := state.ExpectedWithdrawals(s, state.Epoch(s))
 	if I.FullValidation {
-		expectedWithdrawals := state.ExpectedWithdrawals(s, state.Epoch(s))
 		if len(expectedWithdrawals) != withdrawals.Len() {
 			return fmt.Errorf(
 				"ProcessWithdrawals: expected %d withdrawals, but got %d",
@@ -274,6 +325,13 @@ func (I *impl) ProcessWithdrawals(
 		}); err != nil {
 			return err
 		}
+	}
+
+	if s.Version() >= clparams.ElectraVersion {
+		// Update pending partial withdrawals [New in Electra:EIP7251]
+		pendingPartialWithdrawal := s.GetPendingPartialWithdrawals()
+		pendingPartialWithdrawal.Cut(int(partialWithdrawalsCount))
+		s.SetPendingPartialWithdrawals(pendingPartialWithdrawal)
 	}
 
 	if err := solid.RangeErr[*cltypes.Withdrawal](withdrawals, func(_ int, w *cltypes.Withdrawal, _ int) error {
