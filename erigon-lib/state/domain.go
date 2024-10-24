@@ -93,6 +93,7 @@ type Domain struct {
 
 	integrityCheck func(name kv.Domain, fromStep, toStep uint64) bool
 
+	canSkipReplaceOnMerge bool
 	// replaceKeysInValues allows to replace commitment branch values with shorter keys.
 	// for commitment domain only
 	replaceKeysInValues bool

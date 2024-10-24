@@ -360,7 +360,7 @@ func (a *Aggregator) RebuildCommitmentFiles(ctx context.Context, rwDb kv.RwDB, t
 	}()
 
 	acRo.RestrictSubsetFileDeletions(true)
-	a.commitmentValuesTransform = false
+	// a.commitmentValuesTransform = false
 
 	var totalKeysCommitted uint64
 
@@ -546,7 +546,7 @@ func (a *Aggregator) RebuildCommitmentFiles(ctx context.Context, rwDb kv.RwDB, t
 	a.logger.Info("Commitment rebuild", "duration", time.Since(start), "totalKeysProcessed", common.PrettyCounter(totalKeysCommitted))
 
 	a.logger.Info("Squeezing commitment files disabled")
-	// a.commitmentValuesTransform = true
+	a.commitmentValuesTransform = true
 
 	acRo.Close()
 

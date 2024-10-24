@@ -1512,7 +1512,7 @@ func (ac *AggregatorRoTx) mergeFiles(ctx context.Context, files SelectedStaticFi
 
 		g.Go(func() (err error) {
 			var vt valueTransformer
-			if ac.a.commitmentValuesTransform && kid == kv.CommitmentDomain {
+			if ac.a.commitmentValuesTransform && kid == kv.CommitmentDomain && !ac.d[kv.CommitmentDomain].d.canSkipReplaceOnMerge {
 				ac.RestrictSubsetFileDeletions(true)
 				accStorageMerged.Wait()
 

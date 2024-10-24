@@ -257,6 +257,8 @@ func (sd *SharedDomains) RebuildCommitmentShard(ctx context.Context, next func()
 	sd.DiscardWrites(kv.StorageDomain)
 	sd.DiscardWrites(kv.CodeDomain)
 
+	sd.aggTx.a.d[kv.CommitmentDomain].canSkipReplaceOnMerge = true // hacky way to finish partially rebuilt commitment
+
 	visComFiles := sd.aggTx.d[kv.CommitmentDomain].Files()
 	sd.logger.Info("starting commitment", "shard", fmt.Sprintf("%d-%d", cfg.StepFrom, cfg.StepTo),
 		"totalKeys", common.PrettyCounter(cfg.Keys), "block", sd.BlockNum(),
