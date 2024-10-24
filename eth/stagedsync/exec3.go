@@ -693,6 +693,7 @@ func ExecV3(ctx context.Context,
 	// Only needed by bor chains
 	shouldGenerateChangesetsForLastBlocks := cfg.chainConfig.Bor != nil
 
+	receiptsHashResultCh := make(chan error)
 Loop:
 	for ; blockNum <= maxBlockNum; blockNum++ {
 		// set shouldGenerateChangesets=true if we are at last n blocks from maxBlockNum. this is as a safety net in chains
@@ -901,6 +902,16 @@ Loop:
 					}
 					checkReceipts := !cfg.vmConfig.StatelessExec && chainConfig.IsByzantium(txTask.BlockNum) && !cfg.vmConfig.NoReceipts && !isMining
 					if txTask.BlockNum > 0 && !skipPostEvaluation { //Disable check for genesis. Maybe need somehow improve it in future - to satisfy TestExecutionSpec
+						if blockNum == maxBlockNum {
+							go func() {
+								if err := core.BlockPostValidation(usedGas, blobGasUsed, checkReceipts, txTask.BlockReceipts, txTask.Header, isMining); err != nil {
+									receiptsHashResultCh <- fmt.Errorf("%w, txnIdx=%d, %v", consensus.ErrInvalidBlock, txTask.TxIndex, err) //same as in stage_exec.go
+								} else {
+									receiptsHashResultCh <- nil
+								}
+							}()
+						}
+
 						if err := core.BlockPostValidation(usedGas, blobGasUsed, checkReceipts, txTask.BlockReceipts, txTask.Header, isMining); err != nil {
 							return fmt.Errorf("%w, txnIdx=%d, %v", consensus.ErrInvalidBlock, txTask.TxIndex, err) //same as in stage_exec.go
 						}
@@ -962,6 +973,12 @@ Loop:
 			start := time.Now()
 			if _, err := doms.ComputeCommitment(ctx, true, blockNum, execStage.LogPrefix()); err != nil {
 				return err
+			}
+			if blockNum == maxBlockNum {
+				err := <-receiptsHashResultCh
+				if err != nil {
+					return err
+				}
 			}
 			ts += time.Since(start)
 			aggTx.RestrictSubsetFileDeletions(false)
