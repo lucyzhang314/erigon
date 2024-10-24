@@ -34,6 +34,7 @@ import (
 	"github.com/erigontech/erigon-lib/metrics"
 	"github.com/erigontech/erigon-lib/state"
 	libstate "github.com/erigontech/erigon-lib/state"
+	"github.com/erigontech/erigon/core/state_cache"
 	"github.com/erigontech/erigon/core/types/accounts"
 	"github.com/erigontech/erigon/turbo/shards"
 )
@@ -465,12 +466,23 @@ type StateWriterV3 struct {
 	rs          *StateV3
 	trace       bool
 	accumulator *shards.Accumulator
+
+	stateCache *state_cache.StateCache
 }
 
 func NewStateWriterV3(rs *StateV3, accumulator *shards.Accumulator) *StateWriterV3 {
 	return &StateWriterV3{
 		rs:          rs,
 		accumulator: accumulator,
+		//trace: true,
+	}
+}
+
+func NewStateWriterV3WithStateCache(rs *StateV3, accumulator *shards.Accumulator, stateCache *state_cache.StateCache) *StateWriterV3 {
+	return &StateWriterV3{
+		rs:          rs,
+		accumulator: accumulator,
+		stateCache:  stateCache,
 		//trace: true,
 	}
 }
@@ -494,8 +506,13 @@ func (w *StateWriterV3) UpdateAccountData(address common.Address, original, acco
 		if err := w.rs.domains.DomainDel(kv.CodeDomain, address[:], nil, nil, 0); err != nil {
 			return err
 		}
+
 		if err := w.rs.domains.DomainDelPrefix(kv.StorageDomain, address[:]); err != nil {
 			return err
+		}
+		if w.stateCache != nil {
+			w.stateCache.DeletePrefix(kv.StorageDomain, address[:])
+			w.stateCache.Delete(kv.CodeDomain, address[:])
 		}
 	}
 	value := accounts.SerialiseV3(account)
@@ -506,6 +523,10 @@ func (w *StateWriterV3) UpdateAccountData(address common.Address, original, acco
 	if err := w.rs.domains.DomainPut(kv.AccountsDomain, address[:], nil, value, nil, 0); err != nil {
 		return err
 	}
+	if w.stateCache != nil {
+		w.stateCache.Put(kv.AccountsDomain, address[:], value)
+	}
+
 	return nil
 }
 
@@ -519,6 +540,9 @@ func (w *StateWriterV3) UpdateAccountCode(address common.Address, incarnation ui
 	if w.accumulator != nil {
 		w.accumulator.ChangeCode(address, incarnation, code)
 	}
+	if w.stateCache != nil {
+		w.stateCache.Put(kv.CodeDomain, address[:], code)
+	}
 	return nil
 }
 
@@ -528,6 +552,9 @@ func (w *StateWriterV3) DeleteAccount(address common.Address, original *accounts
 	}
 	if err := w.rs.domains.DomainDel(kv.AccountsDomain, address[:], nil, nil, 0); err != nil {
 		return err
+	}
+	if w.stateCache != nil {
+		w.stateCache.Delete(kv.AccountsDomain, address[:])
 	}
 	// if w.accumulator != nil { TODO: investigate later. basically this will always panic. keeping this out should be fine anyway.
 	// 	w.accumulator.DeleteAccount(address)
@@ -545,13 +572,18 @@ func (w *StateWriterV3) WriteAccountStorage(address common.Address, incarnation 
 		fmt.Printf("storage: %x,%x,%x\n", address, *key, v)
 	}
 	if len(v) == 0 {
+		if w.stateCache != nil {
+			w.stateCache.Delete(kv.StorageDomain, composite)
+		}
 		return w.rs.domains.DomainDel(kv.StorageDomain, composite, nil, nil, 0)
 	}
 	if w.accumulator != nil && key != nil && value != nil {
 		k := *key
 		w.accumulator.ChangeStorage(address, incarnation, k, v)
 	}
-
+	if w.stateCache != nil {
+		w.stateCache.Put(kv.StorageDomain, composite, v)
+	}
 	return w.rs.domains.DomainPut(kv.StorageDomain, composite, nil, v, nil, 0)
 }
 
@@ -572,6 +604,8 @@ type ReaderV3 struct {
 	trace     bool
 	tx        kv.TemporalGetter
 	composite []byte
+
+	stateCache *state_cache.StateCache
 }
 
 func NewReaderV3(tx kv.TemporalGetter) *ReaderV3 {
@@ -579,6 +613,15 @@ func NewReaderV3(tx kv.TemporalGetter) *ReaderV3 {
 		//trace:     true,
 		tx:        tx,
 		composite: make([]byte, 20+32),
+	}
+}
+
+func NewReaderV3WithStateCache(tx kv.TemporalGetter, stateCache *state_cache.StateCache) *ReaderV3 {
+	return &ReaderV3{
+		//trace:     true,
+		tx:         tx,
+		composite:  make([]byte, 20+32),
+		stateCache: stateCache,
 	}
 }
 
@@ -590,9 +633,25 @@ func (r *ReaderV3) SetTrace(trace bool)                  { r.trace = trace }
 func (r *ReaderV3) ResetReadSet()                        {}
 
 func (r *ReaderV3) ReadAccountData(address common.Address) (*accounts.Account, error) {
-	enc, _, err := r.tx.DomainGet(kv.AccountsDomain, address[:], nil)
-	if err != nil {
-		return nil, err
+	var (
+		enc []byte
+		err error
+		ok  bool
+	)
+	if r.stateCache != nil {
+		enc, ok = r.stateCache.Get(kv.AccountsDomain, address[:])
+		if !ok {
+			enc, _, err = r.tx.DomainGet(kv.AccountsDomain, address[:], nil)
+			if err != nil {
+				return nil, err
+			}
+			//r.stateCache.Put(kv.AccountsDomain, address[:], common.Copy(enc))
+		}
+	} else {
+		enc, _, err = r.tx.DomainGet(kv.AccountsDomain, address[:], nil)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if len(enc) == 0 {
 		if r.trace {
@@ -613,36 +672,56 @@ func (r *ReaderV3) ReadAccountData(address common.Address) (*accounts.Account, e
 
 func (r *ReaderV3) ReadAccountStorage(address common.Address, incarnation uint64, key *common.Hash) ([]byte, error) {
 	r.composite = append(append(r.composite[:0], address[:]...), key.Bytes()...)
-	enc, _, err := r.tx.DomainGet(kv.StorageDomain, r.composite, nil)
-	if err != nil {
-		return nil, err
-	}
-	if r.trace {
-		if enc == nil {
-			fmt.Printf("ReadAccountStorage [%x] => [empty], txNum: %d\n", r.composite, r.txNum)
-		} else {
-			fmt.Printf("ReadAccountStorage [%x] => [%x], txNum: %d\n", r.composite, enc, r.txNum)
+
+	var (
+		enc []byte
+		err error
+		ok  bool
+	)
+	if r.stateCache != nil {
+		enc, ok = r.stateCache.Get(kv.StorageDomain, r.composite)
+		if !ok {
+			enc, _, err = r.tx.DomainGet(kv.StorageDomain, r.composite, nil)
+			if err != nil {
+				return nil, err
+			}
+			//r.stateCache.Put(kv.StorageDomain, r.composite, common.Copy(enc))
+		}
+	} else {
+		enc, _, err = r.tx.DomainGet(kv.StorageDomain, r.composite, nil)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return enc, nil
 }
 
 func (r *ReaderV3) ReadAccountCode(address common.Address, incarnation uint64, codeHash common.Hash) ([]byte, error) {
-	//if codeHash == emptyCodeHashH { // TODO: how often do we have this case on mainnet/bor-mainnet?
-	//	return nil, nil
-	//}
-	enc, _, err := r.tx.DomainGet(kv.CodeDomain, address[:], nil)
-	if err != nil {
-		return nil, err
-	}
-	if r.trace {
-		fmt.Printf("ReadAccountCode [%x] => [%x], txNum: %d\n", address, enc, r.txNum)
+	var (
+		enc []byte
+		err error
+		ok  bool
+	)
+	if r.stateCache != nil {
+		enc, ok = r.stateCache.Get(kv.CodeDomain, address[:])
+		if !ok {
+			enc, _, err = r.tx.DomainGet(kv.CodeDomain, address[:], nil)
+			if err != nil {
+				return nil, err
+			}
+			r.stateCache.Put(kv.CodeDomain, address[:], common.Copy(enc))
+		}
+	} else {
+		enc, _, err = r.tx.DomainGet(kv.CodeDomain, address[:], nil)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return enc, nil
 }
 
 func (r *ReaderV3) ReadAccountCodeSize(address common.Address, incarnation uint64, codeHash common.Hash) (int, error) {
-	enc, _, err := r.tx.DomainGet(kv.CodeDomain, address[:], nil)
+	enc, err := r.ReadAccountCode(address, incarnation, codeHash)
 	if err != nil {
 		return 0, err
 	}

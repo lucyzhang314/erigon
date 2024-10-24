@@ -400,7 +400,11 @@ func ExecV3(ctx context.Context,
 	if isMining {
 		applyWorker = cfg.applyWorkerMining
 	}
-	applyWorker.ResetState(rs, accumulator)
+	if cfg.stateCache != nil {
+		applyWorker.ResetStateWithStateCache(rs, accumulator, cfg.stateCache)
+	} else {
+		applyWorker.ResetState(rs, accumulator)
+	}
 	defer applyWorker.LogLRUStats()
 
 	commitThreshold := batchSize.Bytes()
@@ -915,6 +919,7 @@ Loop:
 				if cfg.hd != nil && cfg.hd.POSSync() && errors.Is(err, consensus.ErrInvalidBlock) {
 					cfg.hd.ReportBadHeaderPoS(header.Hash(), header.ParentHash)
 				}
+				cfg.stateCache.DeleteAll()
 				if cfg.badBlockHalt {
 					return err
 				}
@@ -1066,7 +1071,11 @@ Loop:
 					rs = state.NewStateV3(doms, logger)
 
 					applyWorker.ResetTx(applyTx)
-					applyWorker.ResetState(rs, accumulator)
+					if cfg.stateCache != nil {
+						applyWorker.ResetStateWithStateCache(rs, accumulator, cfg.stateCache)
+					} else {
+						applyWorker.ResetState(rs, accumulator)
+					}
 
 					return nil
 				}(); err != nil {

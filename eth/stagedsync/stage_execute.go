@@ -43,6 +43,7 @@ import (
 	"github.com/erigontech/erigon/core/rawdb"
 	"github.com/erigontech/erigon/core/rawdb/rawdbhelpers"
 	"github.com/erigontech/erigon/core/state"
+	"github.com/erigontech/erigon/core/state_cache"
 	"github.com/erigontech/erigon/core/types"
 	"github.com/erigontech/erigon/core/vm"
 	"github.com/erigontech/erigon/eth/ethconfig"
@@ -91,6 +92,7 @@ type ExecuteBlockCfg struct {
 	keepAllChangesets bool
 
 	applyWorker, applyWorkerMining *exec3.Worker
+	stateCache                     *state_cache.StateCache
 }
 
 func StageExecuteBlocksCfg(
@@ -111,6 +113,7 @@ func StageExecuteBlocksCfg(
 	genesis *types.Genesis,
 	syncCfg ethconfig.Sync,
 	silkworm *silkworm.Silkworm,
+	stateCache *state_cache.StateCache,
 ) ExecuteBlockCfg {
 	if dirs.SnapDomain == "" {
 		panic("empty `dirs` variable")
@@ -136,6 +139,7 @@ func StageExecuteBlocksCfg(
 		applyWorker:       exec3.NewWorker(nil, log.Root(), context.Background(), false, db, nil, blockReader, chainConfig, genesis, nil, engine, dirs, false),
 		applyWorkerMining: exec3.NewWorker(nil, log.Root(), context.Background(), false, db, nil, blockReader, chainConfig, genesis, nil, engine, dirs, true),
 		keepAllChangesets: keepAllChangesets,
+		stateCache:        stateCache,
 	}
 }
 
@@ -162,6 +166,7 @@ func ExecBlockV3(s *StageState, u Unwinder, txc wrap.TxContainer, toBlock uint64
 
 	parallel := txc.Tx == nil
 	if err := ExecV3(ctx, s, u, workersCount, cfg, txc, parallel, to, logger, initialCycle, isMining); err != nil {
+		cfg.stateCache.DeleteAll()
 		return err
 	}
 	return nil
@@ -169,7 +174,7 @@ func ExecBlockV3(s *StageState, u Unwinder, txc wrap.TxContainer, toBlock uint64
 
 var ErrTooDeepUnwind = errors.New("too deep unwind")
 
-func unwindExec3(u *UnwindState, s *StageState, txc wrap.TxContainer, ctx context.Context, br services.FullBlockReader, accumulator *shards.Accumulator, logger log.Logger) (err error) {
+func unwindExec3(u *UnwindState, s *StageState, txc wrap.TxContainer, ctx context.Context, br services.FullBlockReader, accumulator *shards.Accumulator, stateCache *state_cache.StateCache, logger log.Logger) (err error) {
 	var domains *libstate.SharedDomains
 	if txc.Doms == nil {
 		domains, err = libstate.NewSharedDomains(txc.Tx, logger)
@@ -180,6 +185,7 @@ func unwindExec3(u *UnwindState, s *StageState, txc wrap.TxContainer, ctx contex
 	} else {
 		domains = txc.Doms
 	}
+
 	rs := state.NewStateV3(domains, logger)
 
 	txNumsReader := rawdbv3.TxNums.WithCustomReadTxNumFunc(freezeblocks.ReadTxNumFuncFromBlockReader(ctx, br))
@@ -213,6 +219,16 @@ func unwindExec3(u *UnwindState, s *StageState, txc wrap.TxContainer, ctx contex
 		} else {
 			for i := range currentKeys {
 				changeset[i] = libstate.MergeDiffSets(changeset[i], currentKeys[i])
+			}
+		}
+	}
+	if stateCache != nil {
+		for i := range changeset {
+			if i != int(kv.AccountsDomain) && i != int(kv.StorageDomain) {
+				continue
+			}
+			for _, diff := range changeset[i] {
+				stateCache.Delete(kv.Domain(i), diff.Key)
 			}
 		}
 	}
@@ -377,7 +393,7 @@ func unwindExecutionStage(u *UnwindState, s *StageState, txc wrap.TxContainer, c
 		accumulator.StartChange(u.UnwindPoint, hash, txs, true)
 	}
 
-	return unwindExec3(u, s, txc, ctx, cfg.blockReader, accumulator, logger)
+	return unwindExec3(u, s, txc, ctx, cfg.blockReader, accumulator, cfg.stateCache, logger)
 }
 
 func PruneExecutionStage(s *PruneState, tx kv.RwTx, cfg ExecuteBlockCfg, ctx context.Context) (err error) {
