@@ -902,7 +902,6 @@ Loop:
 					}
 					checkReceipts := !cfg.vmConfig.StatelessExec && chainConfig.IsByzantium(txTask.BlockNum) && !cfg.vmConfig.NoReceipts && !isMining
 					if txTask.BlockNum > 0 && !skipPostEvaluation { //Disable check for genesis. Maybe need somehow improve it in future - to satisfy TestExecutionSpec
-						a := time.Now()
 						// This is an optimization to avoid running the post validation for every transaction in the block serially
 						// We only run it once for the last transaction in the block, this yields a +5% improvement in block processing time
 						if blockNum == maxBlockNum {
@@ -918,7 +917,6 @@ Loop:
 								return fmt.Errorf("%w, txnIdx=%d, %v", consensus.ErrInvalidBlock, txTask.TxIndex, err) //same as in stage_exec.go
 							}
 						}
-						fmt.Println("BlockPostValidation", time.Since(a))
 					}
 					usedGas, blobGasUsed = 0, 0
 				}
