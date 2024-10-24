@@ -931,9 +931,10 @@ func (b *BtIndex) keyCmp(k []byte, di uint64, g *seg.Reader, matchedValue []byte
 		return 0, nil, fmt.Errorf("key at %d/%d not found, file: %s", di, b.ef.Count(), b.FileName())
 	}
 
-	kBuf, _ := g.Next(matchedValue[:0])
-	compare := bytes.Compare(kBuf, k)
+	// kBuf, _ := g.Next(matchedValue[:0])
+	// compare := bytes.Compare(kBuf, k)
 	// kBuf = nil
+	compare := g.MatchCmp(k)
 	if compare == 0 {
 		// g.Reset(offset)
 		matchedValue, _ = g.Next(matchedValue[:0])
