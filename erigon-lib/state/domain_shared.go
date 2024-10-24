@@ -454,6 +454,9 @@ func (sd *SharedDomains) LatestCommitment(prefix []byte) ([]byte, uint64, error)
 	if err != nil {
 		return nil, 0, fmt.Errorf("commitment prefix %x read error: %w", prefix, err)
 	}
+	if startTx >= sd.StepSize()*2816 && sd.aggTx.a.d[kv.CommitmentDomain].canSkipReplaceOnMerge {
+		return v, endTx / sd.aggTx.a.StepSize(), nil
+	}
 
 	if !sd.aggTx.a.commitmentValuesTransform || bytes.Equal(prefix, keyCommitmentState) {
 		return v, endTx / sd.aggTx.a.StepSize(), nil
