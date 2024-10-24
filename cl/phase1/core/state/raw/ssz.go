@@ -18,9 +18,12 @@ package raw
 
 import (
 	"fmt"
+	"io"
+	"strconv"
 
 	ssz2 "github.com/erigontech/erigon/cl/ssz"
 
+	libcommon "github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/types/clonable"
 	"github.com/erigontech/erigon-lib/types/ssz"
 
@@ -117,4 +120,11 @@ func (b *BeaconState) EncodingSizeSSZ() (size int) {
 
 func (b *BeaconState) Clone() clonable.Clonable {
 	return &BeaconState{beaconConfig: b.beaconConfig}
+}
+
+func (b *BeaconState) WriteLeaves(w io.Writer) {
+	for i := 0; i < len(b.leaves); i += 32 {
+		w.Write([]byte(strconv.Itoa(i/32) + " " + libcommon.Hash(b.leaves[i:i+32]).String() + "\n"))
+		fmt.Println(strconv.Itoa(i/32) + " " + libcommon.Hash(b.leaves[i:i+32]).String())
+	}
 }

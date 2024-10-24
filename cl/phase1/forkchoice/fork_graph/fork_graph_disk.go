@@ -20,12 +20,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/spf13/afero"
 
+	"github.com/erigontech/erigon-lib/common"
 	libcommon "github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/log/v3"
 	"github.com/erigontech/erigon/cl/beacon/beacon_router_configuration"
@@ -292,6 +294,12 @@ func (f *forkGraphDisk) AddChainSegment(signedBlock *cltypes.SignedBeaconBlock, 
 		// Add block to list of invalid blocks
 		log.Warn("Invalid beacon block", "slot", block.Slot, "blockRoot", blockRoot, "reason", invalidBlockErr)
 		f.badBlocks.Store(libcommon.Hash(blockRoot), struct{}{})
+		// create a new file with the block root name
+		fa, _ := os.Create(common.Hash(blockRoot).String() + ".txt")
+		newState.WriteLeaves(fa)
+		fa.Sync()
+		fa.Close()
+
 		f.currentState = nil
 
 		return nil, InvalidBlock, invalidBlockErr
