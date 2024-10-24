@@ -328,10 +328,13 @@ func (s *CaplinSnapshots) recalcVisibleFiles() {
 	defer s.visibleSegmentsLock.Unlock()
 
 	getNewVisibleSegments := func(dirtySegments *btree.BTreeG[*DirtySegment]) []*VisibleSegment {
+		toClose := make([]*DirtySegment, 0)
 		newVisibleSegments := make([]*VisibleSegment, 0, dirtySegments.Len())
 		dirtySegments.Walk(func(segments []*DirtySegment) bool {
 			for _, sn := range segments {
 				if sn.canDelete.Load() {
+					sn.stale.Store(true)
+					toClose = append(toClose, sn)
 					continue
 				}
 				if !sn.Indexed() {
@@ -349,6 +352,9 @@ func (s *CaplinSnapshots) recalcVisibleFiles() {
 			}
 			return true
 		})
+		for _, sn := range toClose {
+			dirtySegments.Delete(sn)
+		}
 		return newVisibleSegments
 	}
 	s.BeaconBlocks.VisibleSegments = getNewVisibleSegments(s.BeaconBlocks.DirtySegments)

@@ -222,7 +222,8 @@ type DirtySegment struct {
 	frozen   bool
 	refcount atomic.Int32
 
-	canDelete atomic.Bool
+	canDelete atomic.Bool // can be deleted from snapshots, but still visible
+	stale     atomic.Bool // already deleted from snapshots, not visible anymore
 }
 
 type VisibleSegment struct {
@@ -464,7 +465,7 @@ func (s *segmentsRotx) Close() {
 			continue
 		}
 		refCnt := src.refcount.Add(-1)
-		if refCnt == 0 && src.canDelete.Load() {
+		if refCnt == 0 && src.stale.Load() {
 			src.closeAndRemoveFiles()
 		}
 	}
@@ -616,11 +617,15 @@ func (s *RoSnapshots) recalcVisibleFiles() {
 
 	var maxVisibleBlocks []uint64
 	s.segments.Scan(func(segtype snaptype.Enum, value *segments) bool {
+		toClose := make([]*DirtySegment, 0)
 		dirtySegments := value.DirtySegments
 		newVisibleSegments := make([]*VisibleSegment, 0, dirtySegments.Len())
+
 		dirtySegments.Walk(func(segs []*DirtySegment) bool {
 			for _, seg := range segs {
 				if seg.canDelete.Load() {
+					seg.stale.Store(true)
+					toClose = append(toClose, seg)
 					continue
 				}
 				if !seg.Indexed() {
@@ -641,6 +646,10 @@ func (s *RoSnapshots) recalcVisibleFiles() {
 			}
 			return true
 		})
+
+		for _, seg := range toClose {
+			dirtySegments.Delete(seg)
+		}
 
 		// protect from gaps
 		if len(newVisibleSegments) > 0 {
@@ -1019,9 +1028,6 @@ func (s *RoSnapshots) delete(fileName string) error {
 	defer s.dirtySegmentsLock.Unlock()
 
 	var err error
-	var delSeg *DirtySegment
-	var dirtySegments *btree.BTreeG[*DirtySegment]
-
 	_, fName := filepath.Split(fileName)
 	s.segments.Scan(func(segtype snaptype.Enum, value *segments) bool {
 		findDelSeg := false
@@ -1034,11 +1040,6 @@ func (s *RoSnapshots) delete(fileName string) error {
 					continue
 				}
 				sn.canDelete.Store(true)
-				if sn.refcount.Load() == 0 {
-					sn.closeAndRemoveFiles()
-				}
-				delSeg = sn
-				dirtySegments = value.DirtySegments
 				findDelSeg = false
 				return true
 			}
@@ -1046,7 +1047,6 @@ func (s *RoSnapshots) delete(fileName string) error {
 		})
 		return !findDelSeg
 	})
-	dirtySegments.Delete(delSeg)
 	return err
 }
 
@@ -1055,6 +1055,8 @@ func (s *RoSnapshots) Delete(fileName string) error {
 	if s == nil {
 		return nil
 	}
+	v := s.View()
+	defer v.Close()
 	defer s.recalcVisibleFiles()
 	if err := s.delete(fileName); err != nil {
 		return fmt.Errorf("can't delete file: %w", err)
@@ -2384,20 +2386,10 @@ func (m *Merger) integrateMergedDirtyFiles(snapshots *RoSnapshots, in, out map[s
 		}
 	}
 
-	// delete old sub segments
-	for enum, delSegs := range out {
-		segs, b := snapshots.segments.Get(enum)
-		if !b {
-			m.logger.Error("[snapshots] Merge: segment not found", "enum", enum)
-			continue
-		}
-		dirtySegments := segs.DirtySegments
+	// mark old sub segments as canDelete
+	for _, delSegs := range out {
 		for _, delSeg := range delSegs {
-			dirtySegments.Delete(delSeg)
 			delSeg.canDelete.Store(true)
-			if delSeg.refcount.Load() == 0 {
-				delSeg.closeAndRemoveFiles()
-			}
 		}
 	}
 }
