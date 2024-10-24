@@ -903,13 +903,14 @@ Loop:
 					checkReceipts := !cfg.vmConfig.StatelessExec && chainConfig.IsByzantium(txTask.BlockNum) && !cfg.vmConfig.NoReceipts && !isMining
 					if txTask.BlockNum > 0 && !skipPostEvaluation { //Disable check for genesis. Maybe need somehow improve it in future - to satisfy TestExecutionSpec
 						if blockNum == maxBlockNum {
-							go func() {
-								if err := core.BlockPostValidation(usedGas, blobGasUsed, checkReceipts, txTask.BlockReceipts, txTask.Header, isMining); err != nil {
+
+							go func(usedGas, blobGasUsed uint64, checkReceipts bool, blockReceipts types.Receipts, header *types.Header, isMining bool) {
+								if err := core.BlockPostValidation(usedGas, blobGasUsed, checkReceipts, blockReceipts, header, isMining); err != nil {
 									receiptsHashResultCh <- fmt.Errorf("%w, txnIdx=%d, %v", consensus.ErrInvalidBlock, txTask.TxIndex, err) //same as in stage_exec.go
 								} else {
 									receiptsHashResultCh <- nil
 								}
-							}()
+							}(usedGas, blobGasUsed, checkReceipts, txTask.BlockReceipts, txTask.Header, isMining)
 						} else {
 							if err := core.BlockPostValidation(usedGas, blobGasUsed, checkReceipts, txTask.BlockReceipts, txTask.Header, isMining); err != nil {
 								return fmt.Errorf("%w, txnIdx=%d, %v", consensus.ErrInvalidBlock, txTask.TxIndex, err) //same as in stage_exec.go
