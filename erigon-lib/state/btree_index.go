@@ -738,6 +738,7 @@ type BtIndex struct {
 	bplus    *BpsTree
 	size     int64
 	modTime  time.Time
+	trace    bool
 	filePath string
 }
 
@@ -919,7 +920,7 @@ func (b *BtIndex) dataLookup(di uint64, g *seg.Reader) (k, v []byte, offset uint
 }
 
 // comparing `k` with item of index `di`. using buffer `kBuf` to avoid allocations
-func (b *BtIndex) keyCmp(k []byte, di uint64, g *seg.Reader, _ []byte) (int, []byte, error) {
+func (b *BtIndex) keyCmp(k []byte, di uint64, g *seg.Reader, matchedValue []byte) (int, []byte, error) {
 	if di >= b.ef.Count() {
 		return 0, nil, fmt.Errorf("%w: keyCount=%d, but key %d requested. file: %s", ErrBtIndexLookupBounds, b.ef.Count(), di+1, b.FileName())
 	}
@@ -930,18 +931,15 @@ func (b *BtIndex) keyCmp(k []byte, di uint64, g *seg.Reader, _ []byte) (int, []b
 		return 0, nil, fmt.Errorf("key at %d/%d not found, file: %s", di, b.ef.Count(), b.FileName())
 	}
 
-	compare := g.MatchCmp(k)
-	// if compare == 0 {
-	// 	// g.Reset(offset)
-	// 	resBuf, _ = g.Next(resBuf[:0])
-	// 	return 0, resBuf, nil
-	// }
+	kBuf, _ := g.Next(matchedValue[:0])
+	compare := bytes.Compare(kBuf, k)
+	// kBuf = nil
+	if compare == 0 {
+		// g.Reset(offset)
+		matchedValue, _ = g.Next(matchedValue[:0])
+		return 0, matchedValue, nil
+	}
 	return compare, nil, nil
-	//resBuf, _ = g.Next(resBuf)
-	//
-	////TODO: use `b.getter.Match` after https://github.com/erigontech/erigon/issues/7855
-	//return bytes.Compare(resBuf, k), resBuf, nil
-	//return b.getter.Match(k), result, nil
 }
 
 // getter should be alive all the time of cursor usage
@@ -1021,23 +1019,24 @@ func (b *BtIndex) Get(lookup []byte, gr *seg.Reader) (k, v []byte, offsetInFile 
 		// since fetching k and v from data file is required to use Getter.
 		// Why to do Getter.Reset twice when we can get kv right there.
 
-		_, found, index, err = b.bplus.Get(gr, lookup)
+		v, found, index, err = b.bplus.Get(gr, lookup)
 		if err != nil || !found {
 			if errors.Is(err, ErrBtIndexLookupBounds) {
 				return k, v, offsetInFile, false, nil
 			}
 			return nil, nil, 0, false, err
 		}
-		k, v, offsetInFile, err = b.dataLookup(index, gr)
-		if err != nil {
-			if errors.Is(err, ErrBtIndexLookupBounds) {
-				// err = nil
-				return k, v, offsetInFile, false, nil
-			}
-			// return nil, nil, 0, false, err
-			return k, v, offsetInFile, false, err
-		}
-		return k, v, offsetInFile, true, nil
+		return lookup, v, b.Offsets().Get(index), true, nil
+		// k, v, offsetInFile, err = b.dataLookup(index, gr)
+		// if err != nil {
+		// 	if errors.Is(err, ErrBtIndexLookupBounds) {
+		// 		// err = nil
+		// 		return k, v, offsetInFile, false, nil
+		// 	}
+		// 	// return nil, nil, 0, false, err
+		// 	return k, v, offsetInFile, false, err
+		// }
+		// return k, v, offsetInFile, true, nil
 	} else {
 		if b.alloc == nil {
 			return k, v, 0, false, err

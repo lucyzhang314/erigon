@@ -51,7 +51,7 @@ type indexSeekerIterator interface {
 }
 
 type dataLookupFunc func(di uint64, g *seg.Reader) ([]byte, []byte, uint64, error)
-type keyCmpFunc func(k []byte, di uint64, g *seg.Reader, copyBuf []byte) (int, []byte, error)
+type keyCmpFunc func(k []byte, di uint64, g *seg.Reader, copyBuf []byte) (cmp int, value []byte, err error)
 
 // M limits amount of child for tree node.
 func NewBpsTree(kv *seg.Reader, offt *eliasfano32.EliasFano, M uint64, dataLookup dataLookupFunc, keyCmp keyCmpFunc) *BpsTree {
@@ -338,7 +338,7 @@ func (b *BpsTree) Seek(g *seg.Reader, seekKey []byte) (key, value []byte, di uin
 // returns first key which is >= key.
 // If key is nil, returns first key
 // if key is greater than all keys, returns nil
-func (b *BpsTree) Get(g *seg.Reader, key []byte) (k []byte, ok bool, i uint64, err error) {
+func (b *BpsTree) Get(g *seg.Reader, key []byte) (v []byte, ok bool, i uint64, err error) {
 	if b.trace {
 		fmt.Printf("get   %x\n", key)
 	}
@@ -359,7 +359,7 @@ func (b *BpsTree) Get(g *seg.Reader, key []byte) (k []byte, ok bool, i uint64, e
 	var m uint64
 	for l < r {
 		m = (l + r) >> 1
-		cmp, k, err = b.keyCmpFunc(key, m, g, k[:0])
+		cmp, v, err = b.keyCmpFunc(key, m, g, v[:0])
 		if err != nil {
 			return nil, false, 0, err
 		}
@@ -369,7 +369,7 @@ func (b *BpsTree) Get(g *seg.Reader, key []byte) (k []byte, ok bool, i uint64, e
 
 		switch cmp {
 		case 0:
-			return k, true, m, nil
+			return v, true, m, nil
 		case 1:
 			r = m
 		case -1:
@@ -377,11 +377,11 @@ func (b *BpsTree) Get(g *seg.Reader, key []byte) (k []byte, ok bool, i uint64, e
 		}
 	}
 
-	cmp, k, err = b.keyCmpFunc(key, l, g, k[:0])
+	cmp, v, err = b.keyCmpFunc(key, l, g, v[:0])
 	if err != nil || cmp != 0 {
 		return nil, false, 0, err
 	}
-	return k, true, l, nil
+	return v, true, l, nil
 }
 
 func (b *BpsTree) Offsets() *eliasfano32.EliasFano { return b.offt }
