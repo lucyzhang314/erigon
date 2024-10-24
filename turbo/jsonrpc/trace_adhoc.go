@@ -1313,10 +1313,12 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 				}
 				if is_cancun {
 					maxBlobFee, overflow := new(uint256.Int).MulOverflow(msg.MaxFeePerBlobGas(), new(uint256.Int).SetUint64(msg.BlobGas()))
+					fmt.Printf("---- calculating maxBlobFee: %v, balanceCheck: %v\n", maxBlobFee, balanceCheck)
 					if overflow {
 						fmt.Println("---- overflow 4")
 					}
 					balanceCheck, overflow = balanceCheck.AddOverflow(balanceCheck, maxBlobFee)
+					fmt.Printf("---- adding maxBlobFee: %v\n", balanceCheck)
 					if overflow {
 						fmt.Println("---- overflow 5")
 					}
@@ -1324,13 +1326,40 @@ func (api *TraceAPIImpl) doCallMany(ctx context.Context, dbtx kv.Tx, msgs []type
 			}
 			fmt.Printf("---- balanceCheck: %v\n", balanceCheck)
 
-			balance := ibs.GetBalance(msg.From())
+			mgval := uint256.NewInt(msg.Gas())
+			mgval.Mul(mgval, msg.GasPrice())
+			balanceCheck2 := mgval
+			if msg.FeeCap() != nil {
+				balanceCheck2.SetUint64(msg.Gas())
+				balanceCheck2 = balanceCheck2.Mul(balanceCheck2, msg.FeeCap())
+			}
+			balanceCheck2.Add(balanceCheck2, msg.Value())
+			// if is_cancun {
+			// 	blobGas := uint64(len(msg.BlobHashes()) * params.BlobTxBlobGasPerBlob)
+			// 	if blobGas > 0 {
+			// 		blobBalanceCheck := uint256.NewInt(blobGas)
+			// 		blobBalanceCheck.Mul(blobBalanceCheck, nil)
+			// 		balanceCheck2.Add(balanceCheck2, blobBalanceCheck)
+			// 		// Pay for blobGasUsed * actual blob fee
+			// 		blobFee := uint256.NewInt(blobGas)
+			// 		blobFee.Mul(blobFee, nil)
+			// 		mgval.Add(mgval, blobFee)
+			// 	}
+			// }
+
+			fmt.Printf("---- balanceCheck2: %v\n", balanceCheck2)
+
 			fmt.Printf("---- from: %x\n", msg.From())
 			if msg.To() != nil {
 				fmt.Printf("---- to: %x\n", *msg.To())
 			}
-			fmt.Printf("---- balance from state: %v\n", balance)
+			fmt.Printf("---- gasLimit: %v\n", msg.Gas())
+			fmt.Printf("---- gasPrice: %v\n", msg.GasPrice())
 			fmt.Printf("---- feecap: %v\n", msg.FeeCap())
+			fmt.Printf("---- tip: %v\n", msg.Tip())
+			balance := ibs.GetBalance(msg.From())
+			fmt.Printf("---- balance from state: %v\n", balance)
+
 			execResult, err = core.ApplyMessage(evm, msg, gp, true /* refunds */, gasBailout /* gasBailout */)
 			fmt.Println("---- err: ", err)
 			fmt.Println("------------------------------------")
