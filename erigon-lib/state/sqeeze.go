@@ -545,22 +545,23 @@ func (a *Aggregator) RebuildCommitmentFiles(ctx context.Context, rwDb kv.RwDB, t
 	}
 	a.logger.Info("Commitment rebuild", "duration", time.Since(start), "totalKeysProcessed", common.PrettyCounter(totalKeysCommitted))
 
-	a.logger.Info("Squeezing commitment files")
-	a.commitmentValuesTransform = true
+	a.logger.Info("Squeezing commitment files disabled")
+	// a.commitmentValuesTransform = true
 
 	acRo.Close()
 
 	a.recalcVisibleFiles(a.dirtyFilesEndTxNumMinimax())
 
 	fmt.Printf("latest root %x\n", latestRoot)
-	actx := a.BeginFilesRo()
-	defer actx.Close()
-	if err = actx.SqueezeCommitmentFiles(actx); err != nil {
-		a.logger.Warn("squeezeCommitmentFiles failed", "err", err)
-		fmt.Printf("rebuilt commitment files still available. Instead of re-run, you have to run 'erigon snapshots sqeeze' to finish squeezing")
-		return nil, err
-	}
 	return latestRoot, nil
+	// actx := a.BeginFilesRo()
+	// defer actx.Close()
+	// if err = actx.SqueezeCommitmentFiles(actx); err != nil {
+	// 	a.logger.Warn("squeezeCommitmentFiles failed", "err", err)
+	// 	fmt.Printf("rebuilt commitment files still available. Instead of re-run, you have to run 'erigon snapshots sqeeze' to finish squeezing")
+	// 	return nil, err
+	// }
+	// return latestRoot, nil
 }
 
 func domainFiles(dirs datadir.Dirs, domain kv.Domain) []string {
